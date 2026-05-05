@@ -1,0 +1,20 @@
+{
+  // Base TypeScript config shared across all workspaces
+  "compilerOptions": {
+    "target": "ES2022",
+    "module": "commonjs",
+    "lib": ["ES2022"],
+    "strict": true,
+    "esModuleInterop": true,
+    "skipLibCheck": true,
+    "forceConsistentCasingInFileNames": true,
+    "resolveJsonModule": true,
+    "declaration": true,
+    "declarationMap": true,
+    "sourceMap": true,
+    "paths": {
+      "@sms-saas/shared": ["../shared/src/index.ts"]
+    }
+  },
+  "exclude": ["node_modules", "dist"]
+}

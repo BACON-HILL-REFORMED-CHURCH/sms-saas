@@ -1,0 +1,121 @@
+// ============================================================
+// Prisma Schema — SMS SaaS Platform
+// ============================================================
+
+generator client {
+  provider = "prisma-client-js"
+}
+
+datasource db {
+  provider = "postgresql"
+  url      = env("DATABASE_URL")
+}
+
+// ─── User ────────────────────────────────────────────────────
+model User {
+  id              String        @id @default(uuid())
+  email           String        @unique
+  passwordHash    String
+  role            Role          @default(USER)
+  balance         Int           @default(0)   // in cents
+  isEmailVerified Boolean       @default(false)
+  verifyToken     String?       // email verification token
+  createdAt       DateTime      @default(now())
+  updatedAt       DateTime      @updatedAt
+
+  orders          Order[]
+  transactions    Transaction[]
+
+  @@map("users")
+}
+
+enum Role {
+  USER
+  ADMIN
+}
+
+// ─── Order ───────────────────────────────────────────────────
+model Order {
+  id          String      @id @default(uuid())
+  userId      String
+  user        User        @relation(fields: [userId], references: [id])
+
+  provider    String      // "mock" | "5sim" | "smsactivate"
+  externalId  String      // Provider's activation ID
+  phoneNumber String
+  service     String      // e.g. "telegram"
+  country     String      // e.g. "ru"
+  status      OrderStatus @default(PENDING)
+  smsCode     String?     // Received OTP / code
+  smsFullText String?     // Full SMS body
+  price       Int         // Cost in cents (with margin)
+
+  createdAt   DateTime    @default(now())
+  updatedAt   DateTime    @updatedAt
+
+  transaction Transaction?
+
+  @@index([userId])
+  @@index([status])
+  @@map("orders")
+}
+
+enum OrderStatus {
+  PENDING
+  RECEIVED
+  CANCELED
+  EXPIRED
+}
+
+// ─── Transaction ─────────────────────────────────────────────
+model Transaction {
+  id           String          @id @default(uuid())
+  userId       String
+  user         User            @relation(fields: [userId], references: [id])
+
+  type         TransactionType
+  amount       Int             // Positive = credit, negative = debit (cents)
+  balanceAfter Int             // Snapshot after transaction
+  description  String
+  orderId      String?         @unique
+  order        Order?          @relation(fields: [orderId], references: [id])
+
+  createdAt    DateTime        @default(now())
+
+  @@index([userId])
+  @@map("transactions")
+}
+
+enum TransactionType {
+  DEPOSIT
+  DEBIT
+  REFUND
+  ADMIN_ADJ
+}
+
+// ─── Pricing (admin-configurable margin per service) ─────────
+model ServicePricing {
+  id            String   @id @default(uuid())
+  service       String
+  country       String
+  provider      String
+  marginPercent Int      @default(30)  // % on top of provider price
+  isActive      Boolean  @default(true)
+  updatedAt     DateTime @updatedAt
+
+  @@unique([service, country, provider])
+  @@map("service_pricing")
+}
+
+// ─── Audit Log ───────────────────────────────────────────────
+model AuditLog {
+  id        String   @id @default(uuid())
+  userId    String?
+  action    String   // e.g. "ORDER_CREATED", "BALANCE_ADJUSTED"
+  details   Json?
+  ip        String?
+  createdAt DateTime @default(now())
+
+  @@index([userId])
+  @@map("audit_logs")
+}

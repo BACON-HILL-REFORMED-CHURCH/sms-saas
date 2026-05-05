@@ -1,0 +1,70 @@
+# ============================================================
+# Docker Compose — local development stack
+# Starts: backend + PostgreSQL + Redis
+# Frontend runs separately via `npm run dev:frontend`
+# ============================================================
+
+version: '3.9'
+
+services:
+
+  # ── PostgreSQL ─────────────────────────────────────────────
+  postgres:
+    image: postgres:16-alpine
+    container_name: sms_saas_pg
+    restart: unless-stopped
+    environment:
+      POSTGRES_USER: sms_user
+      POSTGRES_PASSWORD: sms_pass
+      POSTGRES_DB: sms_saas
+    ports:
+      - '5432:5432'
+    volumes:
+      - pg_data:/var/lib/postgresql/data
+    healthcheck:
+      test: ['CMD-SHELL', 'pg_isready -U sms_user']
+      interval: 5s
+      timeout: 5s
+      retries: 5
+
+  # ── Redis ──────────────────────────────────────────────────
+  redis:
+    image: redis:7-alpine
+    container_name: sms_saas_redis
+    restart: unless-stopped
+    ports:
+      - '6379:6379'
+    volumes:
+      - redis_data:/data
+    healthcheck:
+      test: ['CMD', 'redis-cli', 'ping']
+      interval: 5s
+      timeout: 3s
+      retries: 5
+
+  # ── Backend ────────────────────────────────────────────────
+  backend:
+    build:
+      context: .
+      dockerfile: backend/Dockerfile
+    container_name: sms_saas_backend
+    restart: unless-stopped
+    ports:
+      - '3001:3001'
+    environment:
+      NODE_ENV: development
+      DATABASE_URL: postgresql://sms_user:sms_pass@postgres:5432/sms_saas
+      REDIS_HOST: redis
+      REDIS_PORT: 6379
+      JWT_SECRET: dev_secret_change_in_production
+      JWT_EXPIRES_IN: 7d
+      PORT: 3001
+    depends_on:
+      postgres:
+        condition: service_healthy
+      redis:
+        condition: service_healthy
+
+volumes:
+  pg_data:
+  redis_data:

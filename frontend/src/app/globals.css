@@ -1,0 +1,49 @@
+@tailwind base;
+@tailwind components;
+@tailwind utilities;
+
+/* Import Inter font */
+@import url('https://fonts.googleapis.com/css2?family=Inter:wght@300;400;500;600;700&display=swap');
+
+@layer base {
+  * {
+    box-sizing: border-box;
+    margin: 0;
+    padding: 0;
+  }
+
+  :root {
+    --radius: 0.75rem;
+  }
+
+  /* Scrollbar styling */
+  ::-webkit-scrollbar        { width: 6px; }
+  ::-webkit-scrollbar-track  { background: #0f172a; }
+  ::-webkit-scrollbar-thumb  { background: #334155; border-radius: 3px; }
+}
+
+@layer components {
+  /* Reusable card */
+  .card {
+    @apply bg-surface-card border border-surface-border rounded-xl p-6;
+  }
+
+  /* Primary button */
+  .btn-primary {
+    @apply bg-primary-600 hover:bg-primary-700 text-white font-medium
+           px-4 py-2 rounded-lg transition-colors duration-150 disabled:opacity-50
+           disabled:cursor-not-allowed;
+  }
+
+  /* Input field */
+  .input-field {
+    @apply bg-surface border border-surface-border text-slate-100 rounded-lg
+           px-4 py-2.5 w-full focus:outline-none focus:ring-2 focus:ring-primary-500
+           placeholder-slate-500;
+  }
+
+  /* Status badge */
+  .badge-pending  { @apply bg-yellow-500/20 text-yellow-400 text-xs px-2 py-0.5 rounded-full; }
+  .badge-received { @apply bg-green-500/20  text-green-400  text-xs px-2 py-0.5 rounded-full; }
+  .badge-canceled { @apply bg-red-500/20    text-red-400    text-xs px-2 py-0.5 rounded-full; }
+}
