@@ -33,7 +33,7 @@ export class PrismaService extends PrismaClient implements OnModuleInit, OnModul
    * Helper for atomic balance operations using Prisma transactions.
    * Prevents race conditions on concurrent wallet updates.
    */
-  async executeTransaction<T>(fn: (tx: PrismaClient) => Promise<T>): Promise<T> {
-    return this.$transaction(fn as any);
+  async executeTransaction<T>(fn: (tx: any) => Promise<T>): Promise<T> {
+    return this.$transaction(fn) as Promise<T>;
   }
 }
