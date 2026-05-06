@@ -3,6 +3,7 @@
   "version": "1.0.0",
   "scripts": {
     "dev": "nest start --watch",
+    "prebuild": "prisma generate",
     "build": "nest build",
     "start": "node dist/main",
     "lint": "eslint \"{src,apps,libs,test}/**/*.ts\"",
