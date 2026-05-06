@@ -38,27 +38,18 @@ async function bootstrap() {
     new ResponseInterceptor(),
   );
 
-  // CORS
+  // CORS — allow Railway domains + localhost + custom FRONTEND_URL
   app.enableCors({
-    origin: process.env.NODE_ENV === 'production'
-      ? (process.env.FRONTEND_URL ?? false)
-      : '*',
+    origin: (origin: string | undefined, callback: (err: Error | null, allow?: boolean) => void) => {
+      if (!origin) return callback(null, true);
+      if (origin.startsWith('http://localhost')) return callback(null, true);
+      if (origin.endsWith('.railway.app')) return callback(null, true);
+      const allowed = (process.env.FRONTEND_URL ?? '').split(',').filter(Boolean);
+      if (allowed.includes(origin)) return callback(null, true);
+      callback(null, false);
+    },
     methods: ['GET', 'POST', 'PUT', 'PATCH', 'DELETE', 'OPTIONS'],
     credentials: true,
   });
 
-  // Security headers (basic hardening without helmet dep)
-  app.use((_req: any, res: any, next: any) => {
-    res.setHeader('X-Content-Type-Options', 'nosniff');
-    res.setHeader('X-Frame-Options', 'DENY');
-    res.setHeader('X-XSS-Protection', '1; mode=block');
-    res.removeHeader('X-Powered-By');
-    next();
-  });
-
-  const port = process.env.PORT ?? 3001;
-  await app.listen(port);
-  Logger.log(`🚀 Backend running on http://localhost:${port}/api/v1`, 'Bootstrap');
-}
-
-bootstrap();
+  // Security headers (basic hardening without helmet 
