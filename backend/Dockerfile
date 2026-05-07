@@ -48,5 +48,5 @@ RUN cd backend && npx prisma generate
 
 EXPOSE 3001
 
-# Run migrations then start server
-CMD ["sh", "-c", "cd backend && npx prisma migrate deploy && node dist/main"]
+# Push schema to DB then start server
+CMD ["sh", "-c", "cd backend && npx prisma db push --accept-data-loss && node dist/main"]
