@@ -21,9 +21,15 @@ api.interceptors.request.use((config) => {
   return config;
 });
 
-// Response interceptor — handle 401 (redirect to login)
+// Response interceptor — unwrap { success, data } envelope + handle 401
 api.interceptors.response.use(
-  (res) => res,
+  (res) => {
+    // Unwrap backend envelope: { success: true, data: ... } → res.data = ...
+    if (res.data && res.data.success === true && 'data' in res.data) {
+      res.data = res.data.data;
+    }
+    return res;
+  },
   (err) => {
     if (err.response?.status === 401 && typeof window !== 'undefined') {
       localStorage.removeItem('access_token');
