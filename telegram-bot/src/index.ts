@@ -58,17 +58,26 @@ function errMsg(err: any): string {
 // ── Keyboards ─────────────────────────────────────────────────
 const userKeyboard = Markup.keyboard([
   ['💰 رصيدي', '📱 شري رقم'],
-  ['📋 طلبياتي', '🚪 خروج'],
+  ['📋 طلبياتي', '📡 eSIM'],
+  ['🚪 خروج'],
 ]).resize();
 
 const adminKeyboard = Markup.keyboard([
   ['💰 رصيدي', '📱 شري رقم'],
-  ['📋 طلبياتي', '⚙️ ادمن'],
-  ['🚪 خروج'],
+  ['📋 طلبياتي', '📡 eSIM'],
+  ['⚙️ ادمن', '🚪 خروج'],
 ]).resize();
 
 const getKeyboard = (role: string) =>
   role === 'ADMIN' ? adminKeyboard : userKeyboard;
+
+// ── Flag helper ───────────────────────────────────────────────
+const FLAGS: Record<string, string> = {
+  ae: '🇦🇪', us: '🇺🇸', gb: '🇬🇧', fr: '🇫🇷', de: '🇩🇪',
+  sa: '🇸🇦', ma: '🇲🇦', eg: '🇪🇬', tn: '🇹🇳', tr: '🇹🇷',
+  es: '🇪🇸', it: '🇮🇹', ru: '🇷🇺', in: '🇮🇳', br: '🇧🇷',
+};
+const flag = (code: string) => FLAGS[code?.toLowerCase()] ?? '🌍';
 
 // ── Bot ───────────────────────────────────────────────────────
 const bot = new Telegraf(BOT_TOKEN);
@@ -309,6 +318,130 @@ bot.action(/^cancel_(.+)$/, async (ctx) => {
   }
 });
 
+// ── eSIM ─────────────────────────────────────────────────────
+async function showEsimProducts(ctx: any, session: UserSession) {
+  try {
+    const res = await makeApi(session.token).get('/esim/products');
+    const products: any[] = unwrap(res);
+
+    if (!products.length) {
+      await ctx.reply('📡 ما كاينش خطط eSIM متاحة حالياً.');
+      return;
+    }
+
+    // Group by country
+    const grouped: Record<string, any[]> = {};
+    for (const p of products) {
+      if (!grouped[p.country]) grouped[p.country] = [];
+      grouped[p.country].push(p);
+    }
+
+    await ctx.reply('📡 *خطط eSIM المتاحة*\n\nاختر البلد:', {
+      parse_mode: 'Markdown',
+      ...Markup.inlineKeyboard(
+        Object.keys(grouped).map((country) => {
+          const code = grouped[country][0].countryCode?.toLowerCase() ?? '';
+          return [Markup.button.callback(
+            `${flag(code)} ${country} (${grouped[country].length} خطط)`,
+            `esim_country_${country}`,
+          )];
+        }),
+      ),
+    });
+  } catch (err) {
+    await ctx.reply(`❌ ${errMsg(err)}`);
+  }
+}
+
+bot.action(/^esim_country_(.+)$/, async (ctx) => {
+  const chatId = ctx.chat!.id;
+  const session = sessions.get(chatId);
+  if (!session) { await ctx.answerCbQuery(); return; }
+
+  const country = ctx.match[1];
+  await ctx.answerCbQuery();
+
+  try {
+    const res = await makeApi(session.token).get('/esim/products');
+    const all: any[] = unwrap(res);
+    const plans = all.filter((p: any) => p.country === country);
+
+    const buttons = plans.map((p: any) => {
+      const stock = p.stock > 0 ? `✅ ${p.stock}` : '❌ نفد';
+      const label = `${p.gb}GB / ${p.days}يوم — $${(p.price / 100).toFixed(2)} (${stock})`;
+      return [Markup.button.callback(label, `esim_buy_${p.id}`)];
+    });
+    buttons.push([Markup.button.callback('🔙 رجوع', 'esim_back')]);
+
+    const f = flag(plans[0]?.countryCode?.toLowerCase() ?? '');
+    await ctx.reply(`${f} *${country}*\n\nاختر الخطة:`, {
+      parse_mode: 'Markdown',
+      ...Markup.inlineKeyboard(buttons),
+    });
+  } catch (err) {
+    await ctx.reply(`❌ ${errMsg(err)}`);
+  }
+});
+
+bot.action('esim_back', async (ctx) => {
+  const session = sessions.get(ctx.chat!.id);
+  if (session) await showEsimProducts(ctx, session);
+  await ctx.answerCbQuery();
+});
+
+bot.action(/^esim_buy_(.+)$/, async (ctx) => {
+  const chatId = ctx.chat!.id;
+  const session = sessions.get(chatId);
+  if (!session) { await ctx.answerCbQuery('سجل الدخول أولا'); return; }
+
+  const productId = ctx.match[1];
+  await ctx.answerCbQuery('⏳ جاري الشراء...');
+
+  try {
+    const res = await makeApi(session.token).post(`/esim/purchase/${productId}`);
+    const order = unwrap(res);
+    const qr = order.inventory?.qrCodeData ?? '';
+    const act = order.inventory?.activationCode ?? '';
+
+    await ctx.reply(
+      `✅ *تم شراء eSIM بنجاح!*\n\n` +
+      `${flag(order.product?.countryCode?.toLowerCase())} ${order.product?.country} — ` +
+      `${order.product?.gb}GB / ${order.product?.days} يوم\n\n` +
+      `📱 *بيانات التفعيل:*\n\`\`\`\n${qr}\n\`\`\`` +
+      (act ? `\n\n🔑 كود التفعيل:\n\`${act}\`` : '') +
+      `\n\n⚙️ *طريقة التفعيل:*\n1. الإعدادات → شبكة خلوية\n2. إضافة eSIM\n3. مسح QR أو إدخال يدوي`,
+      { parse_mode: 'Markdown' },
+    );
+  } catch (err) {
+    await ctx.reply(`❌ ${errMsg(err)}`);
+  }
+});
+
+bot.action('esim_orders', async (ctx) => {
+  const session = sessions.get(ctx.chat!.id);
+  if (!session) { await ctx.answerCbQuery(); return; }
+  await ctx.answerCbQuery();
+
+  try {
+    const res = await makeApi(session.token).get('/esim/orders');
+    const orders: any[] = unwrap(res);
+
+    if (!orders.length) {
+      await ctx.reply('📡 ما عندكش طلبيات eSIM.');
+      return;
+    }
+
+    const text = orders.slice(0, 5).map((o: any, i: number) =>
+      `${i + 1}. ${flag(o.product?.countryCode?.toLowerCase())} ${o.product?.country} — ` +
+      `${o.product?.gb}GB\n   📅 ${new Date(o.createdAt).toLocaleDateString()}`,
+    ).join('\n\n');
+
+    await ctx.reply(`📡 *طلبيات eSIM:*\n\n${text}`, { parse_mode: 'Markdown' });
+  } catch (err) {
+    await ctx.reply(`❌ ${errMsg(err)}`);
+  }
+});
+
 // ── Admin panel ───────────────────────────────────────────────
 bot.hears('⚙️ ادمن', async (ctx) => {
   const session = sessions.get(ctx.chat.id);
@@ -421,6 +554,7 @@ bot.on('text', async (ctx) => {
     if (text === '💰 رصيدي')  return showBalance(ctx, session);
     if (text === '📋 طلبياتي') return showOrders(ctx, session);
     if (text === '📱 شري رقم') return showCountries(ctx);
+    if (text === '📡 eSIM')    return showEsimProducts(ctx, session);
     if (text === '🚪 خروج') {
       sessions.delete(chatId);
       await ctx.reply('👋 تم تسجيل الخروج.', Markup.removeKeyboard());
