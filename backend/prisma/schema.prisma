@@ -26,6 +26,7 @@ model User {
 
   orders          Order[]
   transactions    Transaction[]
+  esimOrders      EsimOrder[]
 
   @@map("users")
 }
@@ -106,6 +107,60 @@ model ServicePricing {
 
   @@unique([service, country, provider])
   @@map("service_pricing")
+}
+
+// ─── eSIM Product (plan catalog) ─────────────────────────────
+model EsimProduct {
+  id          String          @id @default(uuid())
+  name        String
+  country     String
+  countryCode String
+  gb          Float
+  days        Int
+  price       Int
+  isActive    Boolean         @default(true)
+  createdAt   DateTime        @default(now())
+  updatedAt   DateTime        @updatedAt
+
+  inventory   EsimInventory[]
+  esimOrders  EsimOrder[]
+
+  @@map("esim_products")
+}
+
+// ─── eSIM Inventory (individual QR codes) ────────────────────
+model EsimInventory {
+  id             String      @id @default(uuid())
+  productId      String
+  product        EsimProduct @relation(fields: [productId], references: [id])
+  qrCodeData     String
+  activationCode String?
+  isSold         Boolean     @default(false)
+  soldAt         DateTime?
+  createdAt      DateTime    @default(now())
+
+  esimOrder      EsimOrder?
+
+  @@index([productId])
+  @@index([isSold])
+  @@map("esim_inventory")
+}
+
+// ─── eSIM Order ───────────────────────────────────────────────
+model EsimOrder {
+  id          String         @id @default(uuid())
+  userId      String
+  user        User           @relation(fields: [userId], references: [id])
+  productId   String
+  product     EsimProduct    @relation(fields: [productId], references: [id])
+  inventoryId String?        @unique
+  inventory   EsimInventory? @relation(fields: [inventoryId], references: [id])
+  price       Int
+  status      String         @default("COMPLETED")
+  createdAt   DateTime       @default(now())
+
+  @@index([userId])
+  @@map("esim_orders")
 }
 
 // ─── Audit Log ───────────────────────────────────────────────

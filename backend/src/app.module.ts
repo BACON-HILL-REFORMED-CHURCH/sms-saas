@@ -16,6 +16,7 @@ import { WalletModule }    from './wallet/wallet.module';
 import { ProvidersModule }  from './providers/providers.module';
 import { OrdersModule }     from './orders/orders.module';
 import { AdminModule }      from './admin/admin.module';
+import { EsimModule }       from './esim/esim.module';
 
 @Module({
   imports: [
@@ -39,6 +40,7 @@ import { AdminModule }      from './admin/admin.module';
     ProvidersModule,
     OrdersModule,
     AdminModule,
+    EsimModule,
   ],
 })
 export class AppModule {}

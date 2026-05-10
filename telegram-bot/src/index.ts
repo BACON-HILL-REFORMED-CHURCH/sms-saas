@@ -534,8 +534,23 @@ bot.on('text', async (ctx) => {
 });
 
 // ── Launch ────────────────────────────────────────────────────
-bot.launch({ allowedUpdates: ['message', 'callback_query'] });
-console.log('🤖 SMS Shop Bot started successfully!');
+const PORT = parseInt(process.env.PORT ?? '3000');
+const WEBHOOK_DOMAIN = process.env.WEBHOOK_DOMAIN; // e.g. https://sms-saas-bot.up.railway.app
+
+if (WEBHOOK_DOMAIN) {
+  // Webhook mode — Railway production
+  bot.launch({
+    webhook: {
+      domain: WEBHOOK_DOMAIN,
+      port: PORT,
+    },
+    allowedUpdates: ['message', 'callback_query'],
+  }).then(() => console.log(`🤖 Bot running in webhook mode on port ${PORT}`));
+} else {
+  // Polling mode — local dev
+  bot.launch({ allowedUpdates: ['message', 'callback_query'] });
+  console.log('🤖 Bot running in polling mode');
+}
 
 process.once('SIGINT',  () => bot.stop('SIGINT'));
 process.once('SIGTERM', () => bot.stop('SIGTERM'));
