@@ -24,7 +24,7 @@ interface AdminUser {
   _count: { orders: number };
 }
 
-type Tab = 'stats' | 'users' | 'pricing' | 'logs';
+type Tab = 'stats' | 'users' | 'pricing' | 'logs' | 'esim';
 
 // ── Stat Card ──────────────────────────────────────────────
 function StatCard({ label, value, icon }: { label: string; value: string | number; icon: string }) {
@@ -67,6 +67,7 @@ export default function AdminPage() {
     fetchUsers();
     fetchLogs();
     fetchPricing();
+    fetchEsimProducts();
   }, []);
 
   async function fetchStats() {
@@ -119,9 +120,65 @@ export default function AdminPage() {
     }
   }
 
+  // ── eSIM state ────────────────────────────────────────────
+  const [esimProducts, setEsimProducts] = useState<any[]>([]);
+  const [esimForm, setEsimForm] = useState({ name: '', country: '', countryCode: '', gb: '', days: '', price: '' });
+  const [esimMsg, setEsimMsg]   = useState('');
+  const [selProduct, setSelProduct] = useState('');
+  const [qrCode, setQrCode]     = useState('');
+  const [actCode, setActCode]   = useState('');
+  const [qrMsg, setQrMsg]       = useState('');
+  const [inventory, setInventory] = useState<any[]>([]);
+
+  async function fetchEsimProducts() {
+    try { const r = await api.get('/admin/esim/products'); setEsimProducts(Array.isArray(r.data) ? r.data : []); } catch {}
+  }
+
+  async function fetchInventory(productId: string) {
+    try { const r = await api.get(`/admin/esim/inventory/${productId}`); setInventory(Array.isArray(r.data) ? r.data : []); } catch {}
+  }
+
+  async function handleCreateProduct(e: React.FormEvent) {
+    e.preventDefault(); setEsimMsg('');
+    try {
+      await api.post('/admin/esim/products', {
+        name: esimForm.name, country: esimForm.country,
+        countryCode: esimForm.countryCode.toLowerCase(),
+        gb: parseFloat(esimForm.gb), days: parseInt(esimForm.days),
+        price: Math.round(parseFloat(esimForm.price) * 100),
+      });
+      setEsimMsg('✅ Plan created!');
+      setEsimForm({ name: '', country: '', countryCode: '', gb: '', days: '', price: '' });
+      fetchEsimProducts();
+    } catch (err: any) { setEsimMsg(`❌ ${err.response?.data?.message ?? 'Failed'}`); }
+  }
+
+  async function handleAddQr(e: React.FormEvent) {
+    e.preventDefault(); setQrMsg('');
+    if (!selProduct) { setQrMsg('❌ Select a product first'); return; }
+    try {
+      await api.post('/admin/esim/inventory', { productId: selProduct, qrCodeData: qrCode, activationCode: actCode || undefined });
+      setQrMsg('✅ QR code added!');
+      setQrCode(''); setActCode('');
+      fetchInventory(selProduct);
+      fetchEsimProducts();
+    } catch (err: any) { setQrMsg(`❌ ${err.response?.data?.message ?? 'Failed'}`); }
+  }
+
+  async function handleDeleteProduct(id: string) {
+    if (!confirm('Delete this plan?')) return;
+    try { await api.delete(`/admin/esim/products/${id}`); fetchEsimProducts(); } catch (err: any) { alert(err.response?.data?.message ?? 'Failed'); }
+  }
+
+  async function handleDeleteInventory(id: string) {
+    if (!confirm('Delete this QR code?')) return;
+    try { await api.delete(`/admin/esim/inventory/${id}`); if (selProduct) fetchInventory(selProduct); fetchEsimProducts(); } catch (err: any) { alert(err.response?.data?.message ?? 'Failed'); }
+  }
+
   const TABS: { key: Tab; label: string; icon: string }[] = [
     { key: 'stats',   label: 'Stats',   icon: '📊' },
     { key: 'users',   label: 'Users',   icon: '👥' },
+    { key: 'esim',    label: 'eSIM',    icon: '📡' },
     { key: 'pricing', label: 'Pricing', icon: '💲' },
     { key: 'logs',    label: 'Logs',    icon: '📋' },
   ];
@@ -304,6 +361,100 @@ export default function AdminPage() {
             ))}
             {logs.length === 0 && (
               <p className="text-slate-500 text-sm text-center py-6">No logs yet</p>
+            )}
+          </div>
+        </div>
+      )}
+
+      {/* ── eSIM Tab ─────────────────────────────────────── */}
+      {tab === 'esim' && (
+        <div className="space-y-6">
+          {/* Create product */}
+          <div className="card space-y-4">
+            <h2 className="text-slate-100 font-semibold">➕ إضافة خطة eSIM جديدة</h2>
+            <form onSubmit={handleCreateProduct} className="grid grid-cols-2 gap-3">
+              <div><label className="text-xs text-slate-400">الاسم</label>
+                <input className="input w-full mt-1" placeholder="1 GB / 7 days" value={esimForm.name} onChange={e => setEsimForm(f => ({...f, name: e.target.value}))} required /></div>
+              <div><label className="text-xs text-slate-400">البلد</label>
+                <input className="input w-full mt-1" placeholder="UAE" value={esimForm.country} onChange={e => setEsimForm(f => ({...f, country: e.target.value}))} required /></div>
+              <div><label className="text-xs text-slate-400">كود البلد (ISO)</label>
+                <input className="input w-full mt-1" placeholder="ae" value={esimForm.countryCode} onChange={e => setEsimForm(f => ({...f, countryCode: e.target.value}))} required /></div>
+              <div><label className="text-xs text-slate-400">البيانات (GB)</label>
+                <input className="input w-full mt-1" type="number" step="0.5" placeholder="1" value={esimForm.gb} onChange={e => setEsimForm(f => ({...f, gb: e.target.value}))} required /></div>
+              <div><label className="text-xs text-slate-400">الأيام</label>
+                <input className="input w-full mt-1" type="number" placeholder="7" value={esimForm.days} onChange={e => setEsimForm(f => ({...f, days: e.target.value}))} required /></div>
+              <div><label className="text-xs text-slate-400">السعر ($)</label>
+                <input className="input w-full mt-1" type="number" step="0.01" placeholder="2.99" value={esimForm.price} onChange={e => setEsimForm(f => ({...f, price: e.target.value}))} required /></div>
+              <div className="col-span-2 flex items-center gap-3">
+                <button className="btn-primary">إضافة الخطة</button>
+                {esimMsg && <span className="text-sm text-slate-400">{esimMsg}</span>}
+              </div>
+            </form>
+          </div>
+
+          {/* Products list */}
+          <div className="card space-y-3">
+            <h2 className="text-slate-100 font-semibold">📡 الخطط المتاحة</h2>
+            {esimProducts.length === 0 ? (
+              <p className="text-slate-500 text-sm">ما كاينش خطط بعد</p>
+            ) : (
+              <div className="divide-y divide-surface-border">
+                {esimProducts.map((p: any) => (
+                  <div key={p.id} className="py-3 flex items-center justify-between gap-3">
+                    <div>
+                      <p className="text-slate-100 font-medium">{p.country} — {p.gb}GB / {p.days}يوم</p>
+                      <p className="text-slate-400 text-xs">{p.name} · ${(p.price/100).toFixed(2)} · Stock: <span className={p.availableStock > 0 ? 'text-green-400' : 'text-red-400'}>{p.availableStock ?? 0}</span></p>
+                    </div>
+                    <div className="flex gap-2">
+                      <button onClick={() => { setSelProduct(p.id); fetchInventory(p.id); }} className="text-xs text-primary-400 border border-primary-500/30 px-2 py-1 rounded hover:bg-primary-500/10">QR Codes</button>
+                      <button onClick={() => handleDeleteProduct(p.id)} className="text-xs text-red-400 border border-red-500/30 px-2 py-1 rounded hover:bg-red-500/10">حذف</button>
+                    </div>
+                  </div>
+                ))}
+              </div>
+            )}
+          </div>
+
+          {/* Add QR code */}
+          <div className="card space-y-4">
+            <h2 className="text-slate-100 font-semibold">📷 إضافة QR Code</h2>
+            <form onSubmit={handleAddQr} className="space-y-3">
+              <div>
+                <label className="text-xs text-slate-400">اختر الخطة</label>
+                <select className="input w-full mt-1" value={selProduct} onChange={e => { setSelProduct(e.target.value); if(e.target.value) fetchInventory(e.target.value); }} required>
+                  <option value="">-- اختر خطة --</option>
+                  {esimProducts.map((p: any) => <option key={p.id} value={p.id}>{p.country} — {p.gb}GB / {p.days}يوم</option>)}
+                </select>
+              </div>
+              <div>
+                <label className="text-xs text-slate-400">بيانات QR Code (LPA: أو SM-DP+)</label>
+                <textarea className="input w-full mt-1 h-20 font-mono text-xs" placeholder="LPA:1$xxx$xxx أو SM-DP+ address" value={qrCode} onChange={e => setQrCode(e.target.value)} required />
+              </div>
+              <div>
+                <label className="text-xs text-slate-400">كود التفعيل اليدوي (اختياري)</label>
+                <input className="input w-full mt-1" placeholder="ABCD-1234-EFGH" value={actCode} onChange={e => setActCode(e.target.value)} />
+              </div>
+              <div className="flex items-center gap-3">
+                <button className="btn-primary">إضافة QR</button>
+                {qrMsg && <span className="text-sm text-slate-400">{qrMsg}</span>}
+              </div>
+            </form>
+
+            {/* Inventory list */}
+            {selProduct && inventory.length > 0 && (
+              <div className="space-y-2 pt-3 border-t border-surface-border">
+                <p className="text-xs text-slate-400">QR Codes في الخطة ({inventory.length})</p>
+                {inventory.map((item: any) => (
+                  <div key={item.id} className="flex items-center justify-between text-xs">
+                    <span className={`font-mono truncate max-w-xs ${item.isSold ? 'text-slate-600 line-through' : 'text-slate-300'}`}>
+                      {item.isSold ? '✅ مباع' : '🟢'} {item.qrCodeData.substring(0, 40)}...
+                    </span>
+                    {!item.isSold && (
+                      <button onClick={() => handleDeleteInventory(item.id)} className="text-red-400 hover:text-red-300 ml-2">حذف</button>
+                    )}
+                  </div>
+                ))}
+              </div>
             )}
           </div>
         </div>
