@@ -278,7 +278,7 @@ bot.action(/^csms_(\d+)$/, async (ctx) => {
   try {
     const countries = await getSMSCountries();
     const services  = await getSMSServices();
-    const country   = countries.find((c) => c.ID === countryId);
+    const country   = countries.find((c) => String(c.ID) === String(countryId));
     if (!country) { await ctx.reply('❌ Country not found.'); return; }
 
     // Filter to popular services first, then rest
@@ -317,8 +317,8 @@ bot.action(/^ssms_(\d+)_(\d+)$/, async (ctx) => {
 
   try {
     const [countries, services] = await Promise.all([getSMSCountries(), getSMSServices()]);
-    const country = countries.find((c) => c.ID === countryId);
-    const service = services.find((s) => s.ID === serviceId);
+    const country = countries.find((c) => String(c.ID) === String(countryId));
+    const service = services.find((s) => String(s.ID) === String(serviceId));
     if (!country || !service) { await ctx.reply('❌ Not found.'); return; }
 
     // Fetch price from SMSPool
@@ -376,8 +376,8 @@ bot.action(/^cbuy_(\d+)_(\d+)_(\d+)$/, async (ctx) => {
 
     // 2. Purchase from SMSPool
     const [countries, services] = await Promise.all([getSMSCountries(), getSMSServices()]);
-    const country = countries.find((c) => c.ID === countryId);
-    const service = services.find((s) => s.ID === serviceId);
+    const country = countries.find((c) => String(c.ID) === String(countryId));
+    const service = services.find((s) => String(s.ID) === String(serviceId));
 
     const purchaseRes  = await smsPost('/purchase/sms', {
       country: countryId,
