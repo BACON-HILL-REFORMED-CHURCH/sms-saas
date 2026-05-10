@@ -716,14 +716,105 @@ bot.hears('⚙️ Admin Panel', async (ctx) => {
   await ctx.reply('🔧 *Admin Panel*', {
     parse_mode:'Markdown',
     ...Markup.inlineKeyboard([
-      [Markup.button.callback('📊 Statistics',    'adm_stats')],
-      [Markup.button.callback('👥 Users List',    'adm_users')],
-      [Markup.button.callback('💰 Add Balance',   'adm_addbal')],
-      [Markup.button.callback('🎟️ Create Coupon', 'adm_coupon')],
-      [Markup.button.callback('📢 Broadcast',     'adm_broadcast')],
+      [Markup.button.callback('📊 Statistics',     'adm_stats')],
+      [Markup.button.callback('👥 Users List',     'adm_users')],
+      [Markup.button.callback('💰 Add Balance',    'adm_addbal')],
+      [Markup.button.callback('🎟️ Create Coupon',  'adm_coupon')],
+      [Markup.button.callback('📢 Broadcast',      'adm_broadcast')],
       [Markup.button.callback('💳 SMSPool Balance','adm_smsbal')],
+      [Markup.button.callback('📡 eSIM Manager',   'adm_esim')],
     ]),
   });
+});
+
+// ── eSIM Manager ──────────────────────────────────────────────
+bot.action('adm_esim', async (ctx) => {
+  const session = sessions.get(ctx.chat!.id);
+  if (!session || session.role !== 'ADMIN') { await ctx.answerCbQuery(); return; }
+  await ctx.answerCbQuery();
+  try {
+    const res      = await makeApi(session.token).get('/admin/esim/products');
+    const products: any[] = unwrap(res) ?? [];
+    const lines    = products.length
+      ? products.map((p: any, i: number) =>
+          `${i+1}. ${flag(p.countryCode?.toLowerCase())} *${p.country}* — ${p.gb}GB/${p.days}d\n` +
+          `   💰 $${(p.price/100).toFixed(2)} | 📦 Stock: ${p.stock ?? 0} | ID: \`${p.id.slice(0,8)}\``
+        ).join('\n\n')
+      : '_No eSIM products yet._';
+
+    await ctx.reply(
+      `📡 *eSIM Manager*\n\n${lines}`,
+      {
+        parse_mode: 'Markdown',
+        ...Markup.inlineKeyboard([
+          [Markup.button.callback('➕ Add Product',   'adm_esim_add')],
+          [Markup.button.callback('📋 Add QR Code',   'adm_esim_qr')],
+          [Markup.button.callback('🔙 Back',           'adm_esim_back')],
+        ]),
+      },
+    );
+  } catch (err) { await ctx.reply(`❌ ${errMsg(err)}`); }
+});
+
+bot.action('adm_esim_back', async (ctx) => {
+  await ctx.answerCbQuery();
+  const session = sessions.get(ctx.chat!.id);
+  if (!session) return;
+  await ctx.reply('🔧 *Admin Panel*', {
+    parse_mode:'Markdown',
+    ...Markup.inlineKeyboard([
+      [Markup.button.callback('📊 Statistics',     'adm_stats')],
+      [Markup.button.callback('👥 Users List',     'adm_users')],
+      [Markup.button.callback('💰 Add Balance',    'adm_addbal')],
+      [Markup.button.callback('📡 eSIM Manager',   'adm_esim')],
+    ]),
+  });
+});
+
+bot.action('adm_esim_add', async (ctx) => {
+  const chatId  = ctx.chat!.id;
+  const session = sessions.get(chatId);
+  if (!session || session.role !== 'ADMIN') { await ctx.answerCbQuery(); return; }
+  pending.set(chatId, { state: 'adm_esim_name', data: {} });
+  await ctx.reply(
+    `📡 *Add eSIM Product*\n\n` +
+    `Step 1/5: Enter product name\n_Example: Morocco 10GB 30 Days_`,
+    { parse_mode: 'Markdown' },
+  );
+  await ctx.answerCbQuery();
+});
+
+bot.action('adm_esim_qr', async (ctx) => {
+  const chatId  = ctx.chat!.id;
+  const session = sessions.get(chatId);
+  if (!session || session.role !== 'ADMIN') { await ctx.answerCbQuery(); return; }
+  await ctx.answerCbQuery();
+
+  try {
+    const res      = await makeApi(session.token).get('/admin/esim/products');
+    const products: any[] = unwrap(res) ?? [];
+    if (!products.length) { await ctx.reply('❌ No products yet. Add a product first.'); return; }
+
+    const buttons = products.map((p: any) => [
+      Markup.button.callback(
+        `${flag(p.countryCode?.toLowerCase())} ${p.country} ${p.gb}GB — Stock: ${p.stock ?? 0}`,
+        `adm_esim_qrsel_${p.id}`,
+      ),
+    ]);
+    await ctx.reply('📋 *Select product to add QR code:*', { parse_mode: 'Markdown', ...Markup.inlineKeyboard(buttons) });
+  } catch (err) { await ctx.reply(`❌ ${errMsg(err)}`); }
+});
+
+bot.action(/^adm_esim_qrsel_(.+)$/, async (ctx) => {
+  const chatId  = ctx.chat!.id;
+  const session = sessions.get(chatId);
+  if (!session || session.role !== 'ADMIN') { await ctx.answerCbQuery(); return; }
+  pending.set(chatId, { state: 'adm_esim_qrdata', data: { productId: ctx.match[1] } });
+  await ctx.reply(
+    `📋 *Add QR Code*\n\nPaste the QR code data / activation code below:\n\n_Example:_ \`LPA:1$smdp.example.com$ABCDEF123\``,
+    { parse_mode: 'Markdown' },
+  );
+  await ctx.answerCbQuery();
 });
 
 bot.action('adm_stats', async (ctx) => {
@@ -930,6 +1021,88 @@ bot.on('text', async (ctx) => {
     pending.delete(chatId);
     coupons.set(data.code, { amount:parseInt(data.amount), maxUses, usesLeft:maxUses, usedBy:new Set() });
     await ctx.reply(`✅ *Coupon Created!*\n\n🎟️ Code: \`${data.code}\`\n💰 Value: *${data.amount} credits*\n🔢 Max uses: *${maxUses}*`, { parse_mode:'Markdown' });
+    return;
+  }
+
+  // ── ADMIN: eSIM — Add Product ──
+  if (state.state === 'adm_esim_name') {
+    data.name = text;
+    pending.set(chatId, { state: 'adm_esim_country', data });
+    await ctx.reply('Step 2/5: Country name?\n_Example: Morocco_', { parse_mode: 'Markdown' });
+    return;
+  }
+  if (state.state === 'adm_esim_country') {
+    data.country = text;
+    pending.set(chatId, { state: 'adm_esim_code', data });
+    await ctx.reply('Step 3/5: Country code (2 letters)?\n_Example: MA for Morocco, US for USA_', { parse_mode: 'Markdown' });
+    return;
+  }
+  if (state.state === 'adm_esim_code') {
+    data.countryCode = text.toUpperCase().slice(0, 2);
+    pending.set(chatId, { state: 'adm_esim_gb', data });
+    await ctx.reply('Step 4/5: Data size in GB?\n_Example: 10_', { parse_mode: 'Markdown' });
+    return;
+  }
+  if (state.state === 'adm_esim_gb') {
+    const gb = parseFloat(text);
+    if (isNaN(gb) || gb <= 0) { await ctx.reply('❌ Enter a valid number (e.g. 10):'); return; }
+    data.gb = String(gb);
+    pending.set(chatId, { state: 'adm_esim_days', data });
+    await ctx.reply('Step 5/5: Validity in days?\n_Example: 30_', { parse_mode: 'Markdown' });
+    return;
+  }
+  if (state.state === 'adm_esim_days') {
+    const days = parseInt(text);
+    if (isNaN(days) || days <= 0) { await ctx.reply('❌ Enter a valid number (e.g. 30):'); return; }
+    data.days = String(days);
+    pending.set(chatId, { state: 'adm_esim_price', data });
+    await ctx.reply('💰 Price in cents (USD)?\n_Example: 1500 = $15.00_', { parse_mode: 'Markdown' });
+    return;
+  }
+  if (state.state === 'adm_esim_price') {
+    const price = parseInt(text);
+    if (isNaN(price) || price <= 0) { await ctx.reply('❌ Enter price in cents (e.g. 1500 for $15):'); return; }
+    pending.delete(chatId);
+    try {
+      await makeApi(session?.token).post('/admin/esim/products', {
+        name: data.name,
+        country: data.country,
+        countryCode: data.countryCode,
+        gb: parseFloat(data.gb),
+        days: parseInt(data.days),
+        price,
+      });
+      await ctx.reply(
+        `✅ *eSIM Product Created!*\n\n` +
+        `${flag(data.countryCode.toLowerCase())} *${data.country}* — ${data.gb}GB / ${data.days} days\n` +
+        `💰 Price: $${(price/100).toFixed(2)}\n\n` +
+        `Now add QR codes via ⚙️ Admin Panel → 📡 eSIM Manager → 📋 Add QR Code`,
+        { parse_mode: 'Markdown' },
+      );
+    } catch (err) { await ctx.reply(`❌ ${errMsg(err)}`); }
+    return;
+  }
+
+  // ── ADMIN: eSIM — Add QR Code ──
+  if (state.state === 'adm_esim_qrdata') {
+    const qrCodeData = text.trim();
+    pending.set(chatId, { state: 'adm_esim_actcode', data: { ...data, qrCodeData } });
+    await ctx.reply('🔑 Activation code? (optional — press /skip if none)', { parse_mode: 'Markdown' });
+    return;
+  }
+  if (state.state === 'adm_esim_actcode') {
+    const activationCode = text === '/skip' ? '' : text.trim();
+    pending.delete(chatId);
+    try {
+      await makeApi(session?.token).post(`/admin/esim/products/${data.productId}/inventory`, {
+        qrCodeData: data.qrCodeData,
+        activationCode: activationCode || undefined,
+      });
+      await ctx.reply(
+        `✅ *QR Code Added!*\n\nThe eSIM is now available for purchase.\n\n_Stock updated automatically._`,
+        { parse_mode: 'Markdown' },
+      );
+    } catch (err) { await ctx.reply(`❌ ${errMsg(err)}`); }
     return;
   }
 
