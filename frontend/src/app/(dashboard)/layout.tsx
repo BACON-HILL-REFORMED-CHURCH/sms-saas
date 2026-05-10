@@ -12,6 +12,7 @@ import { useAuthStore } from '@/store/auth.store';
 const NAV_LINKS = [
   { href: '/dashboard', label: 'Get Number',   icon: '📲' },
   { href: '/orders',    label: 'My Orders',    icon: '📦' },
+  { href: '/esim',      label: 'eSIM Store',   icon: '📡' },
   { href: '/wallet',    label: 'Wallet',        icon: '💳' },
 ];
 
