@@ -1,0 +1,20 @@
+{
+  "name": "@sms-saas/telegram-bot",
+  "version": "1.0.0",
+  "private": true,
+  "main": "dist/index.js",
+  "scripts": {
+    "build": "tsc",
+    "start": "node dist/index.js",
+    "dev": "ts-node src/index.ts"
+  },
+  "dependencies": {
+    "telegraf": "^4.15.6",
+    "axios": "^1.6.7"
+  },
+  "devDependencies": {
+    "typescript": "^5.3.0",
+    "@types/node": "^20.11.5",
+    "ts-node": "^10.9.2"
+  }
+}
