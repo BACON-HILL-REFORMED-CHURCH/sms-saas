@@ -6,19 +6,22 @@
 
 import { Telegraf, Markup } from 'telegraf';
 import axios from 'axios';
+import crypto from 'crypto';
 
 // ── Config ────────────────────────────────────────────────────
-const BOT_TOKEN       = process.env.TELEGRAM_BOT_TOKEN!;
-const API_URL         = (process.env.API_URL ?? 'http://localhost:3001').replace(/\/$/, '') + '/api/v1';
-const SMSPOOL_KEY     = process.env.SMSPOOL_API_KEY ?? '';
-const MARKUP_PERCENT  = parseFloat(process.env.MARKUP_PERCENT ?? '50');
-const CREDITS_PER_USD = 100;   // 100 credits = $1
-const REFERRAL_BONUS  = parseInt(process.env.REFERRAL_BONUS ?? '100');
-const POLL_INTERVAL   = 30_000;
-const POLL_MAX        = 20;
+const BOT_TOKEN          = process.env.TELEGRAM_BOT_TOKEN!;
+const API_URL            = (process.env.API_URL ?? 'http://localhost:3001').replace(/\/$/, '') + '/api/v1';
+const SMSPOOL_KEY        = process.env.SMSPOOL_API_KEY ?? '';
+const MARKUP_PERCENT     = parseFloat(process.env.MARKUP_PERCENT ?? '50');
+const CREDITS_PER_USD    = 100;   // 100 credits = $1
+const REFERRAL_BONUS     = parseInt(process.env.REFERRAL_BONUS ?? '100');
+const POLL_INTERVAL      = 30_000;
+const POLL_MAX           = 20;
+const CRYPTOMUS_MERCHANT = process.env.CRYPTOMUS_MERCHANT_ID ?? '';
+const CRYPTOMUS_KEY      = process.env.CRYPTOMUS_API_KEY ?? '';
 
 if (!BOT_TOKEN) throw new Error('TELEGRAM_BOT_TOKEN is required');
-console.log(`🤖 API: ${API_URL} | SMSPool: ${SMSPOOL_KEY ? '✅' : '❌ MISSING'}`);
+console.log(`🤖 API: ${API_URL} | SMSPool: ${SMSPOOL_KEY ? '✅' : '❌'} | Cryptomus: ${CRYPTOMUS_MERCHANT ? '✅' : '❌'}`);
 
 // ── Types ─────────────────────────────────────────────────────
 interface UserSession  { token: string; email: string; role: string; userId: string; }
@@ -45,9 +48,11 @@ const pending     = new Map<number, PendingState>();
 const coupons     = new Map<string, Coupon>();
 const referrals   = new Map<number, number>();
 const referred    = new Set<number>();
-const activePolls = new Map<string, NodeJS.Timeout>();
-const smsOrders   = new Map<string, SMSLocalOrder>();
-const userOrders  = new Map<number, string[]>();
+const activePolls    = new Map<string, NodeJS.Timeout>();
+const smsOrders      = new Map<string, SMSLocalOrder>();
+const userOrders     = new Map<number, string[]>();
+const paymentPolls   = new Map<string, NodeJS.Timeout>(); // uuid → interval
+const pendingDeposits= new Map<string, { chatId: number; amountUsd: number; credits: number }>(); // uuid → info
 
 let botAdminToken: string | null  = null;
 let botUsername                   = 'smsshopbot';
@@ -121,19 +126,100 @@ async function tryAutoAdminLogin() {
   } catch (e) { console.log('⚠️ Admin auto-login failed:', errMsg(e)); }
 }
 
+// ── Cryptomus helpers ─────────────────────────────────────────
+function cryptomusSign(body: object, apiKey: string): string {
+  const encoded = Buffer.from(JSON.stringify(body)).toString('base64');
+  return crypto.createHash('md5').update(encoded + apiKey).digest('hex');
+}
+
+async function createCryptomusPayment(orderId: string, amountUsd: number) {
+  const body = {
+    amount:   amountUsd.toFixed(2),
+    currency: 'USD',
+    order_id: orderId,
+    lifetime: 3600,
+    url_return: '',
+  };
+  const sign = cryptomusSign(body, CRYPTOMUS_KEY);
+  const res  = await axios.post('https://api.cryptomus.com/v1/payment', body, {
+    headers: { merchant: CRYPTOMUS_MERCHANT, sign, 'Content-Type': 'application/json' },
+    timeout: 15_000,
+  });
+  return res.data?.result ?? res.data;
+}
+
+async function checkCryptomusPayment(uuid: string) {
+  const body = { uuid };
+  const sign = cryptomusSign(body, CRYPTOMUS_KEY);
+  const res  = await axios.post('https://api.cryptomus.com/v1/payment/info', body, {
+    headers: { merchant: CRYPTOMUS_MERCHANT, sign, 'Content-Type': 'application/json' },
+    timeout: 15_000,
+  });
+  return res.data?.result ?? res.data;
+}
+
+function startPaymentPolling(uuid: string) {
+  if (paymentPolls.has(uuid)) return;
+  const info   = pendingDeposits.get(uuid);
+  if (!info) return;
+  let attempts = 0;
+
+  const t = setInterval(async () => {
+    attempts++;
+    if (attempts > 120) { // 1 hour max
+      clearInterval(t); paymentPolls.delete(uuid); pendingDeposits.delete(uuid);
+      try { await bot.telegram.sendMessage(info.chatId, `⏰ Payment expired. Your deposit session timed out. Tap 💳 Deposit to try again.`); } catch {}
+      return;
+    }
+    try {
+      const data   = await checkCryptomusPayment(uuid);
+      const status = data?.payment_status ?? data?.status ?? '';
+      if (status === 'paid' || status === 'paid_over' || status === 'wrong_amount_waiting') {
+        // Only credit if fully paid
+        if (status !== 'wrong_amount_waiting') {
+          clearInterval(t); paymentPolls.delete(uuid); pendingDeposits.delete(uuid);
+          const session = sessions.get(info.chatId);
+          if (botAdminToken && session) {
+            try {
+              await makeApi(botAdminToken).post('/admin/balance/adjust', {
+                userId: session.userId,
+                amount: info.credits,
+                reason: `Crypto deposit — $${info.amountUsd.toFixed(2)} USD`,
+              });
+            } catch (e) { console.error('Deposit credit failed:', errMsg(e)); }
+          }
+          await bot.telegram.sendMessage(info.chatId,
+            `💰 *Deposit Confirmed!*\n\n` +
+            `✅ Payment received: *$${info.amountUsd.toFixed(2)} USD*\n` +
+            `💎 *+${info.credits} credits* added to your balance!\n\n` +
+            `Happy shopping 🛒`,
+            { parse_mode: 'Markdown' },
+          );
+        }
+      } else if (status === 'cancel' || status === 'expired' || status === 'fail') {
+        clearInterval(t); paymentPolls.delete(uuid); pendingDeposits.delete(uuid);
+        await bot.telegram.sendMessage(info.chatId, `❌ Payment canceled or expired. Tap 💳 Deposit to try again.`);
+      }
+    } catch {}
+  }, 30_000); // check every 30 seconds
+
+  paymentPolls.set(uuid, t);
+}
+
 // ── Keyboards ─────────────────────────────────────────────────
 const userKeyboard = Markup.keyboard([
-  ['💰 Balance',       '📱 Buy Number'],
-  ['📋 My Orders',     '📡 eSIM'],
-  ['🎟️ Redeem Coupon', '👥 Referral'],
-  ['🚪 Logout'],
+  ['💰 Balance',       '💳 Deposit'],
+  ['📱 Buy Number',    '📡 eSIM'],
+  ['📋 My Orders',     '🎟️ Redeem Coupon'],
+  ['👥 Referral',      '🚪 Logout'],
 ]).resize();
 
 const adminKeyboard = Markup.keyboard([
-  ['💰 Balance',       '📱 Buy Number'],
-  ['📋 My Orders',     '📡 eSIM'],
-  ['🎟️ Redeem Coupon', '👥 Referral'],
-  ['⚙️ Admin Panel',   '🚪 Logout'],
+  ['💰 Balance',       '💳 Deposit'],
+  ['📱 Buy Number',    '📡 eSIM'],
+  ['📋 My Orders',     '🎟️ Redeem Coupon'],
+  ['👥 Referral',      '⚙️ Admin Panel'],
+  ['🚪 Logout'],
 ]).resize();
 
 const getKeyboard = (role: string) => role === 'ADMIN' ? adminKeyboard : userKeyboard;
@@ -237,6 +323,150 @@ async function showBalance(ctx: any, session: UserSession) {
     );
   } catch (err) { await ctx.reply(`❌ ${errMsg(err)}`); }
 }
+
+// ════════════════════════════════════════════════════════════════
+// DEPOSIT — Cryptomus crypto payments
+// ════════════════════════════════════════════════════════════════
+async function showDeposit(ctx: any) {
+  if (!CRYPTOMUS_MERCHANT || !CRYPTOMUS_KEY) {
+    await ctx.reply('❌ Crypto payments are not configured yet. Contact admin.');
+    return;
+  }
+  await ctx.reply(
+    `💳 *Deposit Credits*\n\n` +
+    `💱 Pay with crypto (Bitcoin, USDT, ETH and more)\n` +
+    `📊 Rate: $1 = ${CREDITS_PER_USD} credits\n\n` +
+    `Choose deposit amount:`,
+    {
+      parse_mode: 'Markdown',
+      ...Markup.inlineKeyboard([
+        [
+          Markup.button.callback('$5  → 500cr',  'dep_5'),
+          Markup.button.callback('$10 → 1000cr', 'dep_10'),
+        ],
+        [
+          Markup.button.callback('$20 → 2000cr', 'dep_20'),
+          Markup.button.callback('$50 → 5000cr', 'dep_50'),
+        ],
+        [Markup.button.callback('✏️ Custom amount', 'dep_custom')],
+      ]),
+    },
+  );
+}
+
+async function processDeposit(ctx: any, session: UserSession, amountUsd: number) {
+  const chatId  = ctx.chat?.id ?? ctx.chat!.id;
+  const credits = amountUsd * CREDITS_PER_USD;
+
+  await ctx.reply(`⏳ Creating payment for $${amountUsd.toFixed(2)}...`);
+
+  try {
+    const orderId = `tg_${chatId}_${Date.now()}`;
+    const payment = await createCryptomusPayment(orderId, amountUsd);
+
+    if (!payment || !payment.uuid || !payment.url) {
+      await ctx.reply('❌ Failed to create payment. Try again later.');
+      return;
+    }
+
+    const uuid = payment.uuid;
+    pendingDeposits.set(uuid, { chatId, amountUsd, credits });
+
+    await ctx.reply(
+      `💳 *Payment Created!*\n\n` +
+      `💵 Amount: *$${amountUsd.toFixed(2)} USD*\n` +
+      `💎 You will receive: *${credits} credits*\n` +
+      `⏰ Expires in: *1 hour*\n\n` +
+      `👇 Click to pay with crypto:`,
+      {
+        parse_mode: 'Markdown',
+        ...Markup.inlineKeyboard([
+          [Markup.button.url('💳 Pay Now', payment.url)],
+          [Markup.button.callback('🔄 Check Payment', `depcheck_${uuid}`)],
+        ]),
+      },
+    );
+
+    startPaymentPolling(uuid);
+  } catch (err) {
+    await ctx.reply(`❌ Payment error: ${errMsg(err)}`);
+  }
+}
+
+// Deposit preset buttons
+bot.action('dep_5',  async (ctx) => {
+  const session = sessions.get(ctx.chat!.id);
+  if (!session) { await ctx.answerCbQuery('Please login first'); return; }
+  await ctx.answerCbQuery();
+  await processDeposit(ctx, session, 5);
+});
+bot.action('dep_10', async (ctx) => {
+  const session = sessions.get(ctx.chat!.id);
+  if (!session) { await ctx.answerCbQuery('Please login first'); return; }
+  await ctx.answerCbQuery();
+  await processDeposit(ctx, session, 10);
+});
+bot.action('dep_20', async (ctx) => {
+  const session = sessions.get(ctx.chat!.id);
+  if (!session) { await ctx.answerCbQuery('Please login first'); return; }
+  await ctx.answerCbQuery();
+  await processDeposit(ctx, session, 20);
+});
+bot.action('dep_50', async (ctx) => {
+  const session = sessions.get(ctx.chat!.id);
+  if (!session) { await ctx.answerCbQuery('Please login first'); return; }
+  await ctx.answerCbQuery();
+  await processDeposit(ctx, session, 50);
+});
+bot.action('dep_custom', async (ctx) => {
+  const chatId = ctx.chat!.id;
+  if (!sessions.get(chatId)) { await ctx.answerCbQuery('Please login first'); return; }
+  pending.set(chatId, { state: 'deposit_custom', data: {} });
+  await ctx.reply('💵 Enter amount in USD (min $1, max $500):\n_Example: 25_', { parse_mode: 'Markdown' });
+  await ctx.answerCbQuery();
+});
+
+// Manual payment check
+bot.action(/^depcheck_(.+)$/, async (ctx) => {
+  const uuid    = ctx.match[1];
+  const session = sessions.get(ctx.chat!.id);
+  if (!session) { await ctx.answerCbQuery(); return; }
+  await ctx.answerCbQuery('⏳ Checking...');
+  try {
+    const data   = await checkCryptomusPayment(uuid);
+    const status = data?.payment_status ?? data?.status ?? 'unknown';
+    const info   = pendingDeposits.get(uuid);
+    const paid   = status === 'paid' || status === 'paid_over';
+    const failed = status === 'cancel' || status === 'expired' || status === 'fail';
+
+    if (paid && info) {
+      // Clear polling
+      const t = paymentPolls.get(uuid); if (t) { clearInterval(t); paymentPolls.delete(uuid); }
+      pendingDeposits.delete(uuid);
+      if (botAdminToken) {
+        await makeApi(botAdminToken).post('/admin/balance/adjust', {
+          userId: session.userId,
+          amount: info.credits,
+          reason: `Crypto deposit — $${info.amountUsd.toFixed(2)} USD`,
+        });
+      }
+      await ctx.reply(`✅ *Payment Confirmed!*\n\n💎 *+${info?.credits} credits* added!`, { parse_mode: 'Markdown' });
+    } else if (failed) {
+      const t = paymentPolls.get(uuid); if (t) { clearInterval(t); paymentPolls.delete(uuid); }
+      pendingDeposits.delete(uuid);
+      await ctx.reply(`❌ Payment was ${status}. Tap 💳 Deposit to create a new one.`);
+    } else {
+      const labels: Record<string, string> = {
+        process: '🔄 Processing', check: '🔍 Being verified',
+        confirm_check: '🔍 Confirming', wrong_amount: '⚠️ Wrong amount sent',
+      };
+      await ctx.reply(
+        `⏳ *Status: ${labels[status] ?? status}*\n\nPayment not confirmed yet.\nI'm checking automatically every 30 seconds!`,
+        { parse_mode: 'Markdown' },
+      );
+    }
+  } catch (err) { await ctx.reply(`❌ ${errMsg(err)}`); }
+});
 
 // ════════════════════════════════════════════════════════════════
 // BUY NUMBER — SMSPool Direct
@@ -916,6 +1146,7 @@ bot.on('text', async (ctx) => {
   // Keyboard shortcuts
   if (session && !state) {
     if (text === '💰 Balance')        return showBalance(ctx, session);
+    if (text === '💳 Deposit')        return showDeposit(ctx);
     if (text === '📋 My Orders')      return showOrders(ctx, session);
     if (text === '📱 Buy Number')     return showCountries(ctx);
     if (text === '📡 eSIM')           return showEsimProducts(ctx, session);
@@ -1103,6 +1334,19 @@ bot.on('text', async (ctx) => {
         { parse_mode: 'Markdown' },
       );
     } catch (err) { await ctx.reply(`❌ ${errMsg(err)}`); }
+    return;
+  }
+
+  // ── DEPOSIT: Custom Amount ──
+  if (state.state === 'deposit_custom') {
+    const amount = parseFloat(text);
+    if (isNaN(amount) || amount < 1 || amount > 500) {
+      await ctx.reply('❌ Enter a valid amount between $1 and $500:');
+      return;
+    }
+    pending.delete(chatId);
+    if (!session) { await ctx.reply('❌ Please login first.'); return; }
+    await processDeposit(ctx, session, amount);
     return;
   }
 
