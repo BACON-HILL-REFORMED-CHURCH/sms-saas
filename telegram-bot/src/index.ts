@@ -829,27 +829,191 @@ async function rewardReferrer(newChatId: number, newSession: UserSession) {
 }
 
 // ════════════════════════════════════════════════════════════════
-// eSIM — via backend
+// eSIM — via backend (TomMobile-style UI)
 // ════════════════════════════════════════════════════════════════
+
+// Regions map (countryCode → region)
+const REGION_MAP: Record<string, string> = {
+  // Europe
+  GB:'Europe', DE:'Europe', FR:'Europe', IT:'Europe', ES:'Europe', NL:'Europe',
+  SE:'Europe', PL:'Europe', RO:'Europe', PT:'Europe', GR:'Europe', CZ:'Europe',
+  HU:'Europe', UA:'Europe', RU:'Europe',
+  // Middle East & North Africa
+  MA:'Middle East & North Africa', EG:'Middle East & North Africa',
+  TN:'Middle East & North Africa', SA:'Middle East & North Africa',
+  AE:'Middle East & North Africa', TR:'Middle East & North Africa',
+  // Asia
+  CN:'Asia', JP:'Asia', KR:'Asia', IN:'Asia', PH:'Asia', ID:'Asia',
+  VN:'Asia', PK:'Asia', BD:'Asia',
+  // North America
+  US:'North America', CA:'North America', MX:'North America',
+  // Latin America
+  BR:'Latin America', CO:'Latin America', AR:'Latin America',
+  // Africa
+  NG:'Africa', KE:'Africa', ZA:'Africa',
+  // Oceania
+  AU:'Oceania',
+};
+
+function getRegion(code: string): string {
+  return REGION_MAP[code?.toUpperCase()] ?? 'Global';
+}
+
+// Format price-per-GB helper
+function pricePerGb(priceUsd: number, gb: number): string {
+  if (!gb || gb <= 0) return '';
+  const ppg = priceUsd / gb;
+  return ppg < 1 ? `$${ppg.toFixed(2)}/GB` : `$${Math.round(ppg)}/GB`;
+}
+
 async function showEsimProducts(ctx: any, session: UserSession) {
   try {
-    const res  = await makeApi(session.token).get('/esim/products');
+    const res      = await makeApi(session.token).get('/esim/products');
     const products: any[] = unwrap(res) ?? [];
     if (!products.length) { await ctx.reply('📡 No eSIM plans available. Check back soon!'); return; }
 
-    const grouped: Record<string, any[]> = {};
-    for (const p of products) { if (!grouped[p.country]) grouped[p.country] = []; grouped[p.country].push(p); }
-
-    const buttons = [
-      ...Object.entries(grouped).map(([country, plans]) => {
-        const code = plans[0].countryCode?.toLowerCase() ?? '';
-        const inStock = plans.filter((p: any) => p.stock > 0).length;
-        return [Markup.button.callback(`${flag(code)} ${country} (${inStock} plans)`, `esim_c_${country}`)];
-      }),
-      [Markup.button.callback('📋 My eSIM Orders', 'esim_orders')],
-    ];
-    await ctx.reply('📡 *eSIM Store*\n\nSelect a country:', { parse_mode:'Markdown', ...Markup.inlineKeyboard(buttons) });
+    await ctx.reply(
+      `📡 *eSIM Store*\n\n` +
+      `🌐 Internet-only | No calls | Instant delivery\n\n` +
+      `Browse by:`,
+      {
+        parse_mode: 'Markdown',
+        ...Markup.inlineKeyboard([
+          [
+            Markup.button.callback('🌍 Countries',              'esim_tab_countries'),
+            Markup.button.callback('🗺️ Regions',               'esim_tab_regions'),
+          ],
+          [
+            Markup.button.callback('🌐 Global',                'esim_tab_global'),
+            Markup.button.callback('📋 My Orders',             'esim_orders'),
+          ],
+        ]),
+      },
+    );
   } catch (err) { await ctx.reply(`❌ ${errMsg(err)}`); }
+}
+
+// ── Tab: Countries ────────────────────────────────────────────
+bot.action('esim_tab_countries', async (ctx) => {
+  const session = sessions.get(ctx.chat!.id);
+  if (!session) { await ctx.answerCbQuery(); return; }
+  await ctx.answerCbQuery();
+  try {
+    const res      = await makeApi(session.token).get('/esim/products');
+    const all: any[] = unwrap(res) ?? [];
+    const grouped: Record<string, any[]> = {};
+    for (const p of all) {
+      if (!grouped[p.country]) grouped[p.country] = [];
+      grouped[p.country].push(p);
+    }
+    // Sort by name
+    const sorted = Object.entries(grouped).sort(([a],[b]) => a.localeCompare(b));
+    const rows: any[][] = [];
+    for (let i = 0; i < sorted.length; i += 2) {
+      const [c1, plans1] = sorted[i];
+      const code1 = plans1[0].countryCode?.toLowerCase() ?? '';
+      const inStock1 = plans1.filter((p:any)=>p.stock>0).length;
+      const btn1 = Markup.button.callback(`${flag(code1)} ${c1} (${inStock1})`, `esim_c_${c1}`);
+      if (sorted[i+1]) {
+        const [c2, plans2] = sorted[i+1];
+        const code2 = plans2[0].countryCode?.toLowerCase() ?? '';
+        const inStock2 = plans2.filter((p:any)=>p.stock>0).length;
+        rows.push([btn1, Markup.button.callback(`${flag(code2)} ${c2} (${inStock2})`, `esim_c_${c2}`)]);
+      } else {
+        rows.push([btn1]);
+      }
+    }
+    rows.push([Markup.button.callback('🔙 Back', 'esim_back')]);
+    await ctx.reply('🌍 *Select a Country:*', { parse_mode:'Markdown', ...Markup.inlineKeyboard(rows) });
+  } catch (err) { await ctx.reply(`❌ ${errMsg(err)}`); }
+});
+
+// ── Tab: Regions ──────────────────────────────────────────────
+bot.action('esim_tab_regions', async (ctx) => {
+  const session = sessions.get(ctx.chat!.id);
+  if (!session) { await ctx.answerCbQuery(); return; }
+  await ctx.answerCbQuery();
+  try {
+    const res   = await makeApi(session.token).get('/esim/products');
+    const all: any[] = unwrap(res) ?? [];
+    const regions = new Set<string>();
+    for (const p of all) regions.add(getRegion(p.countryCode));
+
+    const regionIcons: Record<string,string> = {
+      'Europe':'🇪🇺', 'Middle East & North Africa':'🕌', 'Asia':'🌏',
+      'North America':'🌎', 'Latin America':'🌎', 'Africa':'🌍', 'Oceania':'🦘', 'Global':'🌐',
+    };
+
+    const buttons = [...regions].sort().map((r) => [
+      Markup.button.callback(`${regionIcons[r]??'🌍'} ${r}`, `esim_r_${r}`),
+    ]);
+    buttons.push([Markup.button.callback('🔙 Back', 'esim_back')]);
+    await ctx.reply('🗺️ *Select a Region:*', { parse_mode:'Markdown', ...Markup.inlineKeyboard(buttons) });
+  } catch (err) { await ctx.reply(`❌ ${errMsg(err)}`); }
+});
+
+bot.action(/^esim_r_(.+)$/, async (ctx) => {
+  const session = sessions.get(ctx.chat!.id);
+  if (!session) { await ctx.answerCbQuery(); return; }
+  const region = ctx.match[1];
+  await ctx.answerCbQuery();
+  try {
+    const res   = await makeApi(session.token).get('/esim/products');
+    const all: any[] = unwrap(res) ?? [];
+    const inRegion = all.filter((p:any) => getRegion(p.countryCode) === region);
+    const grouped: Record<string,any[]> = {};
+    for (const p of inRegion) {
+      if (!grouped[p.country]) grouped[p.country] = [];
+      grouped[p.country].push(p);
+    }
+    const rows: any[][] = [];
+    const sorted = Object.entries(grouped).sort(([a],[b])=>a.localeCompare(b));
+    for (let i = 0; i < sorted.length; i += 2) {
+      const [c1,p1] = sorted[i];
+      const btn1 = Markup.button.callback(`${flag(p1[0].countryCode?.toLowerCase())} ${c1}`, `esim_c_${c1}`);
+      if (sorted[i+1]) {
+        const [c2,p2] = sorted[i+1];
+        rows.push([btn1, Markup.button.callback(`${flag(p2[0].countryCode?.toLowerCase())} ${c2}`, `esim_c_${c2}`)]);
+      } else { rows.push([btn1]); }
+    }
+    rows.push([Markup.button.callback('🔙 Back', 'esim_tab_regions')]);
+    await ctx.reply(`🗺️ *${region}*\n\nSelect a country:`, { parse_mode:'Markdown', ...Markup.inlineKeyboard(rows) });
+  } catch (err) { await ctx.reply(`❌ ${errMsg(err)}`); }
+});
+
+// ── Tab: Global ───────────────────────────────────────────────
+bot.action('esim_tab_global', async (ctx) => {
+  const session = sessions.get(ctx.chat!.id);
+  if (!session) { await ctx.answerCbQuery(); return; }
+  await ctx.answerCbQuery();
+  try {
+    const res   = await makeApi(session.token).get('/esim/products');
+    const all: any[] = unwrap(res) ?? [];
+    const global = all.filter((p:any) => getRegion(p.countryCode) === 'Global' || p.country?.toLowerCase().includes('global') || p.country?.toLowerCase().includes('world'));
+    if (!global.length) { await ctx.reply('🌐 No global plans available yet.'); return; }
+    await showCountryPlans(ctx, session, '🌐 Global', global, 'esim_back');
+  } catch (err) { await ctx.reply(`❌ ${errMsg(err)}`); }
+});
+
+// ── Country → Plans ───────────────────────────────────────────
+async function showCountryPlans(ctx: any, session: UserSession, title: string, plans: any[], backAction: string) {
+  const sorted = [...plans].sort((a,b) => a.price - b.price);
+  const buttons = sorted.map((p: any) => {
+    const priceUsd = p.price / 100;
+    const ppg      = pricePerGb(priceUsd, p.gb);
+    const stock    = p.stock > 0;
+    const label    = stock
+      ? `${p.gb}GB · ${p.days}d · $${priceUsd % 1 === 0 ? priceUsd : priceUsd.toFixed(2)} (${ppg})`
+      : `${p.gb}GB · ${p.days}d · ❌ Sold out`;
+    return [Markup.button.callback(label, stock ? `esim_b_${p.id}` : 'esim_soldout')];
+  });
+  buttons.push([Markup.button.callback('🔙 Back', backAction)]);
+  await ctx.reply(
+    `📡 *${title}*\n\n` +
+    `✅ eSIM compatible\n🌐 Internet only · No calls\n⚡ Instant activation\n\n` +
+    `Choose your plan:`,
+    { parse_mode:'Markdown', ...Markup.inlineKeyboard(buttons) },
+  );
 }
 
 bot.action(/^esim_c_(.+)$/, async (ctx) => {
@@ -862,45 +1026,50 @@ bot.action(/^esim_c_(.+)$/, async (ctx) => {
     const res  = await makeApi(session.token).get('/esim/products');
     const all: any[] = unwrap(res) ?? [];
     const plans = all.filter((p: any) => p.country === country);
-    const buttons = [
-      ...plans.map((p: any) => {
-        const stock = p.stock > 0 ? `✅ ${p.stock}` : '❌ Sold out';
-        return [Markup.button.callback(`${p.gb}GB/${p.days}d — $${(p.price/100).toFixed(2)} (${stock})`, p.stock > 0 ? `esim_b_${p.id}` : 'esim_soldout')];
-      }),
-      [Markup.button.callback('🔙 Back', 'esim_back')],
-    ];
-    await ctx.reply(`${flag(plans[0]?.countryCode?.toLowerCase())} *${country} — eSIM Plans*`, { parse_mode:'Markdown', ...Markup.inlineKeyboard(buttons) });
+    if (!plans.length) { await ctx.reply('❌ No plans for this country.'); return; }
+    const f = flag(plans[0]?.countryCode?.toLowerCase());
+    await showCountryPlans(ctx, session, `${f} ${country}`, plans, 'esim_tab_countries');
   } catch (err) { await ctx.reply(`❌ ${errMsg(err)}`); }
 });
 
-bot.action('esim_soldout', async (ctx) => { await ctx.answerCbQuery('❌ Sold out'); });
+bot.action('esim_soldout', async (ctx) => { await ctx.answerCbQuery('❌ Sold out — choose another plan'); });
 bot.action('esim_back', async (ctx) => {
   const session = sessions.get(ctx.chat!.id);
   if (session) await showEsimProducts(ctx, session);
   await ctx.answerCbQuery();
 });
 
+// ── Confirm Plan ──────────────────────────────────────────────
 bot.action(/^esim_b_(.+)$/, async (ctx) => {
   const chatId  = ctx.chat!.id;
   const session = sessions.get(chatId);
   if (!session) { await ctx.answerCbQuery('Please login first'); return; }
+  const productId = ctx.match[1];
   await ctx.answerCbQuery('⏳ Processing...');
   try {
-    const res   = await makeApi(session.token).post(`/esim/purchase/${ctx.match[1]}`);
+    const res   = await makeApi(session.token).post(`/esim/purchase/${productId}`);
     const order = unwrap(res);
     const qr    = order.inventory?.qrCodeData ?? '';
     const act   = order.inventory?.activationCode ?? '';
     const f     = flag(order.product?.countryCode?.toLowerCase());
+    const priceUsd = order.product?.price / 100;
+    const ppg      = pricePerGb(priceUsd, order.product?.gb);
     await ctx.reply(
-      `✅ *eSIM Purchased!*\n\n${f} *${order.product?.country}* — ${order.product?.gb}GB / ${order.product?.days}d\n\n` +
-      `📱 *Activation Data:*\n\`\`\`\n${qr}\n\`\`\`` + (act ? `\n\n🔑 Code: \`${act}\`` : '') +
-      `\n\n*📲 How to activate:*\n1. Settings → Cellular\n2. Add eSIM\n3. Scan QR or enter code`,
+      `✅ *eSIM Purchased!*\n\n` +
+      `${f} *${order.product?.country}*\n` +
+      `📦 ${order.product?.gb}GB · ${order.product?.days} days\n` +
+      `💵 $${priceUsd % 1 === 0 ? priceUsd : priceUsd.toFixed(2)} (${ppg})\n\n` +
+      `📱 *Activation Data:*\n\`\`\`\n${qr}\n\`\`\`` +
+      (act ? `\n\n🔑 Code: \`${act}\`` : '') +
+      `\n\n*📲 How to activate:*\n1. Settings → Cellular → Add eSIM\n2. Scan QR code\n3. Enable data roaming\n\n` +
+      `_⚠️ Save the QR code! You'll need it to activate._`,
       { parse_mode:'Markdown' },
     );
     await rewardReferrer(chatId, session);
   } catch (err) { await ctx.reply(`❌ ${errMsg(err)}`); }
 });
 
+// ── My Orders ─────────────────────────────────────────────────
 bot.action('esim_orders', async (ctx) => {
   const chatId = ctx.chat!.id;
   const session = sessions.get(chatId);
@@ -909,10 +1078,16 @@ bot.action('esim_orders', async (ctx) => {
   try {
     const res    = await makeApi(session.token).get('/esim/orders');
     const orders: any[] = unwrap(res) ?? [];
-    if (!orders.length) { await ctx.reply('📡 No eSIM orders yet.'); return; }
-    const lines = orders.slice(0,5).map((o: any,i: number) =>
-      `${i+1}. ${flag(o.product?.countryCode?.toLowerCase())} *${o.product?.country}* — ${o.product?.gb}GB\n   📅 ${new Date(o.createdAt).toLocaleDateString()}`
-    ).join('\n\n');
+    if (!orders.length) { await ctx.reply('📡 No eSIM orders yet.\n\nTap 📡 eSIM to browse plans!'); return; }
+    const lines = orders.slice(0,5).map((o: any,i: number) => {
+      const priceUsd = o.product?.price / 100;
+      const ppg = pricePerGb(priceUsd, o.product?.gb);
+      return (
+        `${i+1}. ${flag(o.product?.countryCode?.toLowerCase())} *${o.product?.country}*\n` +
+        `   📦 ${o.product?.gb}GB · ${o.product?.days}d · $${priceUsd % 1 === 0 ? priceUsd : priceUsd.toFixed(2)} (${ppg})\n` +
+        `   📅 ${new Date(o.createdAt).toLocaleDateString()}`
+      );
+    }).join('\n\n');
     await ctx.reply(`📡 *My eSIM Orders:*\n\n${lines}`, { parse_mode:'Markdown' });
   } catch (err) { await ctx.reply(`❌ ${errMsg(err)}`); }
 });
