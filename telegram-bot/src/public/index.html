@@ -492,13 +492,15 @@ let depositPaymentUuid = '';
   tg?.setBackgroundColor('bg_color');
   tg?.enableClosingConfirmation();
 
+  // Hide all pages, show only home
+  document.querySelectorAll('.page').forEach(p => p.style.display = 'none');
+  const homeEl = document.getElementById('page-home');
+  if (homeEl) homeEl.style.display = 'block';
+
   try {
     await login();
     await loadBalance();
     await loadHomeTxns();
-    await loadSmsCountries();
-    await loadEsimProducts();
-    await loadOrders();
     hide('loader');
   } catch (e) {
     const msg = e.message || 'Login failed';
@@ -541,12 +543,21 @@ async function api(path, method = 'GET', body = null) {
 // Navigation
 // ────────────────────────────────────────────────
 function goTab(tab) {
-  document.querySelectorAll('.page').forEach(p => p.classList.remove('active'));
+  // Hide all pages with explicit inline style (overrides CSS)
+  document.querySelectorAll('.page').forEach(p => { p.style.display = 'none'; p.classList.remove('active'); });
   document.querySelectorAll('.nav-item').forEach(n => n.classList.remove('active'));
-  show('page-' + tab);
+  // Show target page
+  const page = document.getElementById('page-' + tab);
+  if (page) { page.style.display = 'block'; page.classList.add('active'); }
   const nav = document.getElementById('nav-' + tab);
   if (nav) nav.classList.add('active');
   tg?.HapticFeedback?.selectionChanged?.();
+  // Load data for the tab
+  if (tab === 'home')    { loadBalance(); loadHomeTxns(); }
+  if (tab === 'sms')     loadSmsCountries();
+  if (tab === 'esim')    loadEsimProducts();
+  if (tab === 'deposit') { /* deposit UI is static */ }
+  if (tab === 'orders')  loadOrders();
 }
 
 // ────────────────────────────────────────────────
