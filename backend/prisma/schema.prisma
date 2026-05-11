@@ -21,6 +21,8 @@ model User {
   balance         Int           @default(0)   // in cents
   isEmailVerified Boolean       @default(false)
   verifyToken     String?       // email verification token
+  telegramId      String?       @unique       // Telegram user ID (for Mini App auth)
+  displayName     String?                     // Telegram display name
   createdAt       DateTime      @default(now())
   updatedAt       DateTime      @updatedAt
 

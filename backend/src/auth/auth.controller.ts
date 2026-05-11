@@ -54,6 +54,16 @@ export class AuthController {
   }
 
   /**
+   * POST /api/v1/auth/telegram-webapp
+   * Body: { initData: string }
+   */
+  @Post('telegram-webapp')
+  @HttpCode(HttpStatus.OK)
+  telegramWebApp(@Body('initData') initData: string) {
+    return this.authService.telegramWebAppLogin(initData);
+  }
+
+  /**
    * GET /api/v1/auth/me
    * Protected — requires valid JWT
    */

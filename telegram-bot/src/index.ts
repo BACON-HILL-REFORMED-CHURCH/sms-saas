@@ -7,6 +7,9 @@
 import { Telegraf, Markup } from 'telegraf';
 import axios from 'axios';
 import crypto from 'crypto';
+import express from 'express';
+import path from 'path';
+import fs from 'fs';
 
 // ── Config ────────────────────────────────────────────────────
 const BOT_TOKEN          = process.env.TELEGRAM_BOT_TOKEN!;
@@ -248,22 +251,26 @@ function startPaymentPolling(uuid: string) {
 }
 
 // ── Keyboards ─────────────────────────────────────────────────
-const userKeyboard = Markup.keyboard([
-  ['💰 Balance',       '💳 Deposit'],
-  ['📱 Buy Number',    '📡 eSIM'],
-  ['📋 My Orders',     '🎟️ Redeem Coupon'],
-  ['👥 Referral',      '🚪 Logout'],
-]).resize();
+function getKeyboard(role: string) {
+  const appUrl = process.env.BOT_PUBLIC_URL
+    ? `${process.env.BOT_PUBLIC_URL.replace(/\/$/, '')}/app`
+    : null;
 
-const adminKeyboard = Markup.keyboard([
-  ['💰 Balance',       '💳 Deposit'],
-  ['📱 Buy Number',    '📡 eSIM'],
-  ['📋 My Orders',     '🎟️ Redeem Coupon'],
-  ['👥 Referral',      '⚙️ Admin Panel'],
-  ['🚪 Logout'],
-]).resize();
+  const rows: any[] = [
+    ['💰 Balance',       '💳 Deposit'],
+    ['📱 Buy Number',    '📡 eSIM'],
+    ['📋 My Orders',     '🎟️ Redeem Coupon'],
+    ['👥 Referral',      role === 'ADMIN' ? '⚙️ Admin Panel' : '🚪 Logout'],
+  ];
 
-const getKeyboard = (role: string) => role === 'ADMIN' ? adminKeyboard : userKeyboard;
+  if (role === 'ADMIN') rows.push(['🚪 Logout']);
+
+  if (appUrl) {
+    rows.unshift([Markup.button.webApp('🌐 Open App', appUrl)]);
+  }
+
+  return Markup.keyboard(rows).resize();
+}
 
 // ── Flag helper ───────────────────────────────────────────────
 const FLAGS: Record<string, string> = {
@@ -312,7 +319,19 @@ bot.start(async (ctx) => {
 
   const session = sessions.get(chatId);
   if (session) {
-    await ctx.reply(`👋 Welcome back, *${session.email}*!`, { parse_mode:'Markdown', ...getKeyboard(session.role) });
+    const appUrl = process.env.BOT_PUBLIC_URL
+      ? `${process.env.BOT_PUBLIC_URL.replace(/\/$/, '')}/app`
+      : null;
+    const inlineButtons: any[] = appUrl
+      ? [[Markup.button.webApp('🌐 Open Dashboard', appUrl)]]
+      : [];
+    await ctx.reply(
+      `👋 Welcome back, *${session.email}*!\n\nUse the menu below or open your dashboard.`,
+      { parse_mode:'Markdown', ...getKeyboard(session.role) },
+    );
+    if (inlineButtons.length) {
+      await ctx.reply('Open the full app:', Markup.inlineKeyboard(inlineButtons));
+    }
     return;
   }
 
@@ -1723,21 +1742,70 @@ bot.on('text', async (ctx) => {
 });
 
 // ════════════════════════════════════════════════════════════════
-// LAUNCH
+// LAUNCH — Express server (Mini App + Telegraf webhook)
 // ════════════════════════════════════════════════════════════════
 const PORT           = parseInt(process.env.PORT ?? '3000');
-const WEBHOOK_DOMAIN = process.env.WEBHOOK_DOMAIN;
+const WEBHOOK_DOMAIN = (process.env.WEBHOOK_DOMAIN ?? '').replace(/\/$/, '');
+// BOT_PUBLIC_URL = public HTTPS URL of this bot server (same as WEBHOOK_DOMAIN on Railway)
+const BOT_PUBLIC_URL = (process.env.BOT_PUBLIC_URL ?? WEBHOOK_DOMAIN).replace(/\/$/, '');
+// BACKEND_URL = NestJS API root (no /api/v1)
+const BACKEND_URL    = (process.env.API_URL ?? '').replace(/\/api\/v1\/?$/, '').replace(/\/$/, '');
 
-// Auto admin login on startup
-tryAutoAdminLogin();
+async function bootstrap() {
+  // Fetch bot username
+  try {
+    const me = await bot.telegram.getMe();
+    botUsername = me.username ?? botUsername;
+    console.log(`🤖 Bot: @${botUsername}`);
+  } catch {}
 
-if (WEBHOOK_DOMAIN) {
-  bot.launch({ webhook:{ domain:WEBHOOK_DOMAIN, port:PORT }, allowedUpdates:['message','callback_query'] })
-    .then(() => console.log(`🤖 Webhook mode — port ${PORT}`));
-} else {
-  bot.launch({ allowedUpdates:['message','callback_query'] });
-  console.log('🤖 Polling mode');
+  // Auto admin login
+  tryAutoAdminLogin();
+
+  const expressApp = express();
+  expressApp.use(express.json());
+
+  // ── Mini App ──────────────────────────────────────────────────
+  const publicDir  = path.join(__dirname, 'public');
+  const htmlSource = path.join(publicDir, 'index.html');
+
+  // Serve index.html with BACKEND_URL injected at request time
+  expressApp.get('/app', (_req, res) => {
+    try {
+      let html = fs.readFileSync(htmlSource, 'utf8');
+      html = html.replace(/__BACKEND_URL__/g, BACKEND_URL || 'http://localhost:3001');
+      res.type('html').send(html);
+    } catch { res.status(500).send('App unavailable'); }
+  });
+  expressApp.use('/app', express.static(publicDir));
+
+  // ── Health ────────────────────────────────────────────────────
+  expressApp.get('/health', (_req, res) => res.json({ status: 'ok', bot: `@${botUsername}` }));
+
+  if (WEBHOOK_DOMAIN) {
+    // ── Webhook mode (Railway) ────────────────────────────────
+    const webhookPath = `/webhook/${BOT_TOKEN.replace(':', '_')}`;
+    expressApp.use(webhookPath, bot.webhookCallback(webhookPath));
+
+    expressApp.listen(PORT, () =>
+      console.log(`🚀 Server on :${PORT} | Mini App: ${BOT_PUBLIC_URL}/app`),
+    );
+
+    await bot.telegram.setWebhook(`${WEBHOOK_DOMAIN}${webhookPath}`, {
+      allowed_updates: ['message', 'callback_query'],
+    });
+    console.log(`🔗 Webhook: ${WEBHOOK_DOMAIN}${webhookPath}`);
+  } else {
+    // ── Long-polling mode (local dev) ─────────────────────────
+    expressApp.listen(PORT, () =>
+      console.log(`🌐 Local server: http://localhost:${PORT}/app`),
+    );
+    await bot.launch({ allowedUpdates: ['message', 'callback_query'] });
+    console.log('🤖 Bot started (long-polling)');
+  }
+
+  process.once('SIGINT',  () => bot.stop('SIGINT'));
+  process.once('SIGTERM', () => bot.stop('SIGTERM'));
 }
 
-process.once('SIGINT',  () => bot.stop('SIGINT'));
-process.once('SIGTERM', () => bot.stop('SIGTERM'));
+bootstrap().catch(console.error);

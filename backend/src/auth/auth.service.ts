@@ -11,7 +11,7 @@ import {
 } from '@nestjs/common';
 import { JwtService } from '@nestjs/jwt';
 import * as bcrypt from 'bcrypt';
-import { randomBytes } from 'crypto';
+import { randomBytes, createHmac } from 'crypto';
 import { PrismaService } from '../prisma/prisma.service';
 import { MailService } from '../mail/mail.service';
 import { RegisterDto, LoginDto } from './dto/register.dto';
@@ -138,6 +138,66 @@ export class AuthService {
       where: { id: userId },
     });
     return this.sanitizeUser(user);
+  }
+
+  // ── Telegram WebApp Login ─────────────────────────────────
+
+  async telegramWebAppLogin(initData: string) {
+    const botToken = process.env.TELEGRAM_BOT_TOKEN;
+    if (!botToken) throw new UnauthorizedException('Bot not configured');
+
+    // Parse initData
+    const params = new URLSearchParams(initData);
+    const hash   = params.get('hash');
+    if (!hash) throw new UnauthorizedException('Invalid initData: missing hash');
+
+    // Build data_check_string (all params except hash, sorted alphabetically)
+    params.delete('hash');
+    const dataCheckString = [...params.entries()]
+      .sort(([a], [b]) => a.localeCompare(b))
+      .map(([k, v]) => `${k}=${v}`)
+      .join('\n');
+
+    // Validate signature
+    const secretKey    = createHmac('sha256', 'WebAppData').update(botToken).digest();
+    const expectedHash = createHmac('sha256', secretKey).update(dataCheckString).digest('hex');
+
+    if (expectedHash !== hash) {
+      throw new UnauthorizedException('Invalid initData signature');
+    }
+
+    // Parse user info
+    const userStr = params.get('user');
+    if (!userStr) throw new UnauthorizedException('No user in initData');
+    const tgUser = JSON.parse(userStr);
+    const telegramId = String(tgUser.id);
+    const firstName  = tgUser.first_name ?? '';
+    const lastName   = tgUser.last_name  ?? '';
+    const username   = tgUser.username   ?? '';
+
+    // Find or create user by telegramId
+    let user = await this.prisma.user.findFirst({ where: { telegramId } });
+
+    if (!user) {
+      // Create account automatically using Telegram ID as identifier
+      const email        = `tg_${telegramId}@telegram.local`;
+      const passwordHash = await bcrypt.hash(randomBytes(32).toString('hex'), 10);
+      user = await this.prisma.user.create({
+        data: {
+          email,
+          passwordHash,
+          telegramId,
+          isEmailVerified: true,
+          displayName: `${firstName} ${lastName}`.trim() || username || `User${telegramId}`,
+        },
+      });
+      this.logger.log(`New Telegram user: ${telegramId} (@${username})`);
+    }
+
+    const payload    = { sub: user.id, email: user.email, role: user.role };
+    const accessToken = this.jwt.sign(payload);
+
+    return { accessToken, user: this.sanitizeUser(user) };
   }
 
   // ── Helpers ───────────────────────────────────────────────
