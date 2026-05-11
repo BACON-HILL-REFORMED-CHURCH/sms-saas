@@ -1205,11 +1205,11 @@ bot.action('adm_esim', async (ctx) => {
 });
 
 // ── Manage single product ─────────────────────────────────────
-bot.action(/^adm_ep_(.+)$/, async (ctx) => {
+bot.action(/^adm_ep_(?!price_|size_|del_|delconfirm_)(.+)$/, async (ctx) => {
   const chatId  = ctx.chat!.id;
   const session = sessions.get(chatId);
   if (!session || session.role !== 'ADMIN') { await ctx.answerCbQuery(); return; }
-  const productId = ctx.match[1];
+  const productId = ctx.match[1] ?? ctx.match[0].replace('adm_ep_','');
   await ctx.answerCbQuery();
   try {
     const res      = await makeApi(session.token).get('/admin/esim/products');
