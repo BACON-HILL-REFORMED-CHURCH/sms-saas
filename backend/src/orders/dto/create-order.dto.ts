@@ -2,21 +2,18 @@
 // Order DTOs
 // ============================================================
 
-import { IsString, IsOptional, IsIn, MinLength } from 'class-validator';
-
-// Supported countries (extend as needed)
-const SUPPORTED_COUNTRIES = ['us', 'ru', 'gb', 'de', 'fr', 'ma', 'any'];
+import { IsString, IsOptional, MinLength, MaxLength, Matches } from 'class-validator';
 
 export class CreateOrderDto {
   @IsString()
-  @MinLength(2)
-  service: string;        // e.g. "telegram"
+  @MinLength(1)
+  service: string;        // e.g. "telegram" or SMSpool short_name
 
   @IsString()
-  @IsIn(SUPPORTED_COUNTRIES, {
-    message: `Country must be one of: ${SUPPORTED_COUNTRIES.join(', ')}`,
-  })
-  country: string;        // e.g. "us"
+  @MinLength(2)
+  @MaxLength(10)
+  @Matches(/^[a-z0-9_-]+$/i, { message: 'Invalid country code' })
+  country: string;        // e.g. "us" or any provider country code
 
   @IsOptional()
   @IsString()

@@ -563,7 +563,7 @@ async function loadBalance() {
 
 async function loadHomeTxns() {
   try {
-    const data = await api('/wallet/transactions?limit=5');
+    const data = await api('/wallet/history?limit=5');
     const txns = Array.isArray(data) ? data : (data.transactions ?? []);
     const container = document.getElementById('home-txns');
     if (!txns.length) return;
@@ -676,11 +676,11 @@ async function buySmsOrder() {
   const btn = document.getElementById('sms-buy-btn');
   btn.disabled = true; btn.textContent = '⏳ Ordering…';
   try {
-    const res = await api('/sms/order', 'POST', {
+    const res = await api('/orders', 'POST', {
       country: smsSelected.country.code,
       service: smsSelected.service.code,
     });
-    smsCurrentOrder = res;
+    smsCurrentOrder = { ...res, orderId: res.id };
     document.getElementById('sms-phone-number').textContent = res.phoneNumber || '—';
     hide('sms-step-confirm');
     show('sms-step-waiting');
@@ -699,7 +699,7 @@ async function buySmsOrder() {
 async function checkSmsCode() {
   if (!smsCurrentOrder?.orderId) return;
   try {
-    const res = await api('/sms/order/' + smsCurrentOrder.orderId);
+    const res = await api('/orders/' + smsCurrentOrder.orderId);
     if (res.smsCode) {
       clearInterval(smsCheckTimer);
       document.getElementById('sms-code-value').textContent = res.smsCode;
@@ -713,7 +713,7 @@ async function checkSmsCode() {
 async function cancelSmsOrder() {
   clearInterval(smsCheckTimer);
   if (smsCurrentOrder?.orderId) {
-    try { await api('/sms/order/' + smsCurrentOrder.orderId + '/cancel', 'POST'); } catch {}
+    try { await api('/orders/' + smsCurrentOrder.orderId, 'DELETE'); } catch {}
     await loadBalance();
   }
   smsCurrentOrder = null;
@@ -971,7 +971,7 @@ function resetDeposit() {
 // ────────────────────────────────────────────────
 async function loadOrders() {
   try {
-    const data = await api('/sms/orders?limit=20');
+    const data = await api('/orders?limit=20');
     const orders = Array.isArray(data) ? data : (data.orders ?? []);
     const esimData = await api('/esim/orders?limit=10').catch(() => ({ orders: [] }));
     const esimOrders = Array.isArray(esimData) ? esimData : (esimData.orders ?? []);

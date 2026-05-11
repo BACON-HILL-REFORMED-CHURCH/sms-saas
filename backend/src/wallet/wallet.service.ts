@@ -212,6 +212,20 @@ export class WalletService {
 
   // ── Helpers ───────────────────────────────────────────────
 
+  /**
+   * Check if a crypto payment UUID has already been credited.
+   * Prevents double-crediting on repeated check calls.
+   */
+  async isCryptoAlreadyCredited(uuid: string): Promise<boolean> {
+    const existing = await this.prisma.transaction.findFirst({
+      where: {
+        description: { contains: uuid },
+        type: 'DEPOSIT',
+      },
+    });
+    return !!existing;
+  }
+
   /** Convert cents to "$X.XX" string */
   formatCents(cents: number): string {
     return `$${(cents / 100).toFixed(2)}`;

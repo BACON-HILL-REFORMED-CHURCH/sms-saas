@@ -2,7 +2,7 @@
 // Wallet DTOs — validated input shapes
 // ============================================================
 
-import { IsInt, IsEnum, Min, Max, IsOptional, IsString } from 'class-validator';
+import { IsInt, IsNumber, IsEnum, Min, Max, IsOptional, IsString } from 'class-validator';
 
 export enum DepositMethod {
   MANUAL       = 'manual',
@@ -17,6 +17,13 @@ export class DepositDto {
 
   @IsEnum(DepositMethod)
   method: DepositMethod;
+}
+
+export class CryptoDepositDto {
+  @IsNumber({}, { message: 'Amount must be a number in USD (e.g. 10 = $10.00)' })
+  @Min(1,      { message: 'Minimum deposit is $1.00' })
+  @Max(10_000, { message: 'Maximum deposit is $10,000' })
+  amountUsd: number; // in USD dollars (e.g. 10 = $10.00)
 }
 
 export class AdminAdjustDto {
