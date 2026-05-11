@@ -1785,7 +1785,8 @@ async function bootstrap() {
   if (WEBHOOK_DOMAIN) {
     // ── Webhook mode (Railway) ────────────────────────────────
     const webhookPath = `/webhook/${BOT_TOKEN.replace(':', '_')}`;
-    expressApp.use(webhookPath, bot.webhookCallback(webhookPath));
+    // Mount WITHOUT path prefix — Express strips the prefix so Telegraf sees '/' not the full path
+    expressApp.use(bot.webhookCallback(webhookPath));
 
     expressApp.listen(PORT, () =>
       console.log(`🚀 Server on :${PORT} | Mini App: ${BOT_PUBLIC_URL}/app`),
