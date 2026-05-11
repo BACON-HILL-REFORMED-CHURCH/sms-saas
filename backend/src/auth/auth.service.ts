@@ -200,6 +200,26 @@ export class AuthService {
     return { accessToken, user: this.sanitizeUser(user) };
   }
 
+  /**
+   * Link a Telegram ID to an existing user account.
+   * Called by the bot after successful email/password login.
+   * If the telegramId is already linked to another account, ignore silently.
+   */
+  async linkTelegram(userId: string, telegramId: string): Promise<{ ok: boolean }> {
+    if (!telegramId) return { ok: false };
+    try {
+      await this.prisma.user.update({
+        where: { id: userId },
+        data: { telegramId: String(telegramId) },
+      });
+      this.logger.log(`Linked telegramId=${telegramId} → userId=${userId}`);
+    } catch (e: any) {
+      // P2002 = unique constraint — telegramId already linked to another user, ignore
+      if (e?.code !== 'P2002') throw e;
+    }
+    return { ok: true };
+  }
+
   // ── Helpers ───────────────────────────────────────────────
 
   /** Remove sensitive fields before sending to client */

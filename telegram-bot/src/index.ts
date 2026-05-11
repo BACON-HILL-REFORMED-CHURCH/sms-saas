@@ -1519,6 +1519,11 @@ bot.on('text', async (ctx) => {
       }
       sessions.set(chatId, { token:result.accessToken, email:data.email, role, userId });
       if (role === 'ADMIN') botAdminToken = result.accessToken;
+      // Link Telegram ID to this account so Mini App uses same wallet
+      const tgId = String(ctx.from?.id ?? '');
+      if (tgId) {
+        try { await makeApi(result.accessToken).patch('/auth/link-telegram', { telegramId: tgId }); } catch {}
+      }
       await ctx.reply(`✅ *Welcome back, ${data.email}!*`, { parse_mode:'Markdown', ...getKeyboard(role) });
     } catch (err) { await ctx.reply(`❌ ${errMsg(err)}\n\nTry again: /start`); }
     return;

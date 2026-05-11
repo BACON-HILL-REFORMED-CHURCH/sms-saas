@@ -6,6 +6,7 @@ import {
   Controller,
   Post,
   Get,
+  Patch,
   Body,
   Query,
   UseGuards,
@@ -61,6 +62,18 @@ export class AuthController {
   @HttpCode(HttpStatus.OK)
   telegramWebApp(@Body('initData') initData: string) {
     return this.authService.telegramWebAppLogin(initData);
+  }
+
+  /**
+   * PATCH /api/v1/auth/link-telegram
+   * Body: { telegramId: string }
+   * Links a Telegram account to the logged-in user — called by bot after login
+   */
+  @Patch('link-telegram')
+  @UseGuards(JwtAuthGuard)
+  @HttpCode(HttpStatus.OK)
+  linkTelegram(@Request() req: any, @Body('telegramId') telegramId: string) {
+    return this.authService.linkTelegram(req.user.sub, telegramId);
   }
 
   /**
