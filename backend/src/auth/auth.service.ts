@@ -205,19 +205,33 @@ export class AuthService {
    * Called by the bot after successful email/password login.
    * If the telegramId is already linked to another account, ignore silently.
    */
-  async linkTelegram(userId: string, telegramId: string): Promise<{ ok: boolean }> {
+  async linkTelegram(userId: string, telegramId: string): Promise<{ ok: boolean; merged?: boolean }> {
     if (!telegramId) return { ok: false };
-    try {
-      await this.prisma.user.update({
-        where: { id: userId },
-        data: { telegramId: String(telegramId) },
-      });
-      this.logger.log(`Linked telegramId=${telegramId} → userId=${userId}`);
-    } catch (e: any) {
-      // P2002 = unique constraint — telegramId already linked to another user, ignore
-      if (e?.code !== 'P2002') throw e;
+    const tgId = String(telegramId);
+
+    // Check if another user already owns this telegramId (auto-created tg_ account)
+    const existing = await this.prisma.user.findUnique({ where: { telegramId: tgId } });
+
+    if (existing && existing.id !== userId) {
+      // Merge: transfer balance from telegram-auto account → real account, then delete tg account
+      this.logger.log(`Merging tg account ${existing.id} (${existing.balance} cr) → ${userId}`);
+      await this.prisma.$transaction([
+        // Transfer balance
+        this.prisma.user.update({ where: { id: userId }, data: { balance: { increment: existing.balance } } }),
+        // Move transactions to real account
+        this.prisma.transaction.updateMany({ where: { userId: existing.id }, data: { userId } }),
+        // Delete the auto-created tg account
+        this.prisma.user.delete({ where: { id: existing.id } }),
+      ]);
     }
-    return { ok: true };
+
+    // Now set telegramId on the real account
+    await this.prisma.user.update({
+      where: { id: userId },
+      data: { telegramId: tgId },
+    });
+    this.logger.log(`Linked telegramId=${tgId} → userId=${userId}`);
+    return { ok: true, merged: !!existing };
   }
 
   // ── Helpers ───────────────────────────────────────────────
