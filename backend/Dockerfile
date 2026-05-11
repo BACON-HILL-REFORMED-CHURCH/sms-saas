@@ -46,7 +46,10 @@ COPY --from=builder /app/shared ./shared
 # Generate Prisma client in production image
 RUN cd backend && npx prisma generate
 
+# Also copy the Prisma generated client to node_modules
+COPY --from=builder /app/node_modules/.prisma ./node_modules/.prisma
+
 EXPOSE 3001
 
-# Push schema to DB then start server
-CMD ["sh", "-c", "cd backend && npx prisma db push --accept-data-loss && node dist/main"]
+# Use absolute paths to avoid working directory confusion
+CMD ["sh", "-c", "npx prisma db push --schema=/app/backend/prisma/schema.prisma --accept-data-loss && node /app/backend/dist/main"]
