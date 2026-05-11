@@ -501,7 +501,13 @@ let depositPaymentUuid = '';
     await loadOrders();
     hide('loader');
   } catch (e) {
-    document.querySelector('#loader p').textContent = '❌ ' + (e.message || 'Login failed');
+    const msg = e.message || 'Login failed';
+    document.querySelector('#loader p').textContent = '❌ ' + msg;
+    // Debug info
+    const dbg = document.createElement('div');
+    dbg.style.cssText = 'position:fixed;bottom:10px;left:10px;right:10px;background:#111;color:#f66;font-size:11px;padding:8px;border-radius:8px;word-break:break-all;z-index:9999;';
+    dbg.textContent = 'Backend: ' + BACKEND + ' | Error: ' + msg + ' | initData: ' + (tg?.initData ? tg.initData.substring(0,30)+'...' : 'EMPTY');
+    document.body.appendChild(dbg);
   }
 })();
 
