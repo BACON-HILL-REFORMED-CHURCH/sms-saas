@@ -7,6 +7,8 @@ import { ConfigModule } from '@nestjs/config';
 import { ThrottlerModule } from '@nestjs/throttler';
 import { ScheduleModule } from '@nestjs/schedule';
 import { PrismaModule } from './prisma/prisma.module';
+import { RechargeModule } from './recharge/recharge.module';
+import { QueueModule } from './queue/queue.module';
 import { RedisModule } from './redis/redis.module';
 
 // Feature modules
@@ -32,6 +34,8 @@ import { EsimModule }       from './esim/esim.module';
     // Core infrastructure
     PrismaModule,
     RedisModule,
+    QueueModule,
+    RechargeModule,
 
     // Feature modules
     AuthModule,
