@@ -241,4 +241,17 @@ export class AuthService {
     const { passwordHash, verifyToken, ...safe } = user;
     return safe;
   }
+
+  async telegramBotLogin(telegramId: string, firstName?: string, username?: string) {
+    let user = await this.prisma.user.findFirst({ where: { telegramId } });
+    if (!user) {
+      const email = `tg_${telegramId}@telegram.local`;
+      const passwordHash = await bcrypt.hash(telegramId + Date.now(), 10);
+      user = await this.prisma.user.create({
+        data: { email, passwordHash, telegramId, displayName: firstName || `User${telegramId}` },
+      });
+    }
+    const payload = { sub: user.id, email: user.email, role: user.role };
+    return { accessToken: this.jwt.sign(payload), user };
+  }
 }

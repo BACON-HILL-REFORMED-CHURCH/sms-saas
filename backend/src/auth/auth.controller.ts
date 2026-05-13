@@ -81,8 +81,13 @@ export class AuthController {
    * Protected — requires valid JWT
    */
   @Get('me')
-  @UseGuards(JwtAuthGuard)
-  getProfile(@Request() req: any) {
-    return this.authService.getProfile(req.user.sub);
+
+  @Post('bot-login')
+  async botLogin(@Body() body: { telegramId: string; secret: string; firstName?: string; username?: string }) {
+    const botSecret = process.env.BOT_SECRET || 'sms-bot-secret-2024';
+    if (body.secret !== botSecret) {
+      throw new (require("@nestjs/common").UnauthorizedException)('Invalid bot secret');
+    }
+    return this.authService.telegramBotLogin(body.telegramId, body.firstName, body.username);
   }
 }
