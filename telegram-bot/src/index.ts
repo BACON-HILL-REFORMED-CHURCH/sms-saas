@@ -25,7 +25,7 @@ const CRYPTOMUS_MERCHANT = process.env.CRYPTOMUS_MERCHANT_ID ?? '';
 const CRYPTOMUS_KEY      = process.env.CRYPTOMUS_API_KEY ?? '';
 const SUPPORT_USERNAME   = process.env.SUPPORT_USERNAME ?? 'toopsellerr';
 const SHOP_NAME          = process.env.SHOP_NAME ?? 'toopseller';
-const WELCOME_IMAGE_URL  = process.env.WELCOME_IMAGE_URL ?? '';
+const WELCOME_IMAGE_URL  = process.env.WELCOME_IMAGE_URL ?? 'https://i.ibb.co/Wp5QbhbY/tele.png';
 
 if (!BOT_TOKEN) throw new Error('TELEGRAM_BOT_TOKEN is required');
 console.log(`🤖 API: ${API_URL} | SMSPool: ${SMSPOOL_KEY ? '✅' : '❌'} | Cryptomus: ${CRYPTOMUS_MERCHANT ? '✅' : '❌'}`);
