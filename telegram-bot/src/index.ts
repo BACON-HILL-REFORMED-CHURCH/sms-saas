@@ -389,7 +389,19 @@ async function showBalance(ctx: any, session: UserSession) {
 // ════════════════════════════════════════════════════════════════
 async function showDeposit(ctx: any) {
   if (!CRYPTOMUS_MERCHANT || !CRYPTOMUS_KEY) {
-    await ctx.reply('❌ Crypto payments are not configured yet. Contact admin.');
+    const chatId = ctx.chat.id;
+    pending.set(chatId, { state: 'recharge_method', data: {} });
+    await ctx.reply(
+      `💳 *Recharge Request*\n\nSelect your payment method:`,
+      {
+        parse_mode: 'Markdown',
+        ...Markup.keyboard([
+          ['💛 Binance ID', '💚 USDT TRC20'],
+          ['🏦 IBAN', '🏧 CIH Bank'],
+          ['❌ Cancel'],
+        ]).resize(),
+      }
+    );
     return;
   }
   await ctx.reply(
@@ -1716,6 +1728,83 @@ bot.on('text', async (ctx) => {
         { parse_mode: 'Markdown' },
       );
     } catch (err) { await ctx.reply(`❌ ${errMsg(err)}`); }
+    return;
+  }
+
+  // ── MANUAL RECHARGE: Method selection ──
+  if (state.state === 'recharge_method') {
+    const methodMap: Record<string, string> = {
+      '💛 Binance ID': 'BINANCE',
+      '💚 USDT TRC20': 'USDT',
+      '🏦 IBAN': 'IBAN',
+      '🏧 CIH Bank': 'CIH',
+    };
+    if (text === '❌ Cancel') {
+      pending.delete(chatId);
+      const kb = session ? getKeyboard(session.role) : Markup.removeKeyboard();
+      await ctx.reply('❌ Cancelled.', kb);
+      return;
+    }
+    const method = methodMap[text];
+    if (!method) { await ctx.reply('Please select a method from the keyboard:'); return; }
+    pending.set(chatId, { state: 'recharge_amount', data: { method } });
+    await ctx.reply(
+      `✅ Method: *${text}*\n\nEnter the amount in USD (e.g. 10):`,
+      { parse_mode: 'Markdown', ...Markup.keyboard([['❌ Cancel']]).resize() }
+    );
+    return;
+  }
+
+  // ── MANUAL RECHARGE: Amount ──
+  if (state.state === 'recharge_amount') {
+    if (text === '❌ Cancel') {
+      pending.delete(chatId);
+      const kb = session ? getKeyboard(session.role) : Markup.removeKeyboard();
+      await ctx.reply('❌ Cancelled.', kb);
+      return;
+    }
+    const amount = parseFloat(text);
+    if (isNaN(amount) || amount < 1) { await ctx.reply('❌ Please enter a valid amount (minimum $1):'); return; }
+    pending.set(chatId, { state: 'recharge_txid', data: { ...data, amount: String(amount) } });
+    await ctx.reply(
+      `✅ Amount: *$${amount}*\n\nEnter your transaction ID or reference number:`,
+      { parse_mode: 'Markdown', ...Markup.keyboard([['❌ Cancel']]).resize() }
+    );
+    return;
+  }
+
+  // ── MANUAL RECHARGE: TxID & submit ──
+  if (state.state === 'recharge_txid') {
+    if (text === '❌ Cancel') {
+      pending.delete(chatId);
+      const kb = session ? getKeyboard(session.role) : Markup.removeKeyboard();
+      await ctx.reply('❌ Cancelled.', kb);
+      return;
+    }
+    pending.delete(chatId);
+    if (!session) { await ctx.reply('❌ Please login first.'); return; }
+    const methodDisplay: Record<string, string> = {
+      BINANCE: '💛 Binance ID', USDT: '💚 USDT TRC20', IBAN: '🏦 IBAN', CIH: '🏧 CIH Bank',
+    };
+    try {
+      await makeApi(session.token).post('/recharge', {
+        method: data.method,
+        amountUsd: parseFloat(data.amount),
+        txid: text,
+      });
+      await ctx.reply(
+        `✅ *Recharge Request Submitted!*\n\n` +
+        `Method: ${methodDisplay[data.method] || data.method}\n` +
+        `Amount: *$${data.amount}*\n` +
+        `TxID: \`${text}\`\n` +
+        `Status: *PENDING* ⏳\n\n` +
+        `Our team will review and approve within 24h.`,
+        { parse_mode: 'Markdown', ...getKeyboard(session.role) }
+      );
+    } catch (err: any) {
+      const msg = err?.response?.data?.message || err.message || 'Unknown error';
+      await ctx.reply(`❌ Error: ${msg}`, getKeyboard(session.role));
+    }
     return;
   }
 
