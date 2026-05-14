@@ -5,7 +5,7 @@
 //   1. User calls createOrder()
 //   2. We pick provider → call getNumber() → debit balance
 //   3. Order stored as PENDING
-//   4. SmsPollingService polls getSMS() every 5s
+//   4. Job enqueued to BullMQ for polling (40 retries @ 5s backoff)
 //   5. On SMS arrival → update order to RECEIVED
 //   6. On cancel/timeout → CANCELED + refund
 // ============================================================
@@ -20,6 +20,7 @@ import { OrderStatus, TransactionType } from '@prisma/client';
 import { PrismaService } from '../prisma/prisma.service';
 import { ProviderRegistryService } from '../providers/provider-registry.service';
 import { WalletService } from '../wallet/wallet.service';
+import { SmsQueueService } from '../queue/sms.queue';
 import { CreateOrderDto } from './dto/create-order.dto';
 
 // Margin added on top of provider price (loaded from DB/config in production)
@@ -36,6 +37,7 @@ export class OrdersService {
     private readonly prisma: PrismaService,
     private readonly registry: ProviderRegistryService,
     private readonly wallet: WalletService,
+    private readonly smsQueue: SmsQueueService,
   ) {}
 
   // ── Create order ──────────────────────────────────────────
@@ -78,7 +80,10 @@ export class OrdersService {
       },
     });
 
-    // 6. Link debit transaction to order
+    // 6. Enqueue SMS polling job
+    await this.smsQueue.addPollJob(order.id);
+
+    // 7. Link debit transaction to order
     await this.prisma.transaction.updateMany({
       where: {
         userId,
@@ -200,7 +205,7 @@ export class OrdersService {
     };
   }
 
-  // ── Expire old pending orders (called by SmsPollingService) ──
+  // ── Expire old pending orders (runs via @Cron in OrdersModule) ──
 
   async expireOldOrders() {
     const cutoff = new Date(Date.now() - ORDER_EXPIRY_MINUTES * 60 * 1_000);

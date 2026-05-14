@@ -1,4 +1,4 @@
-import { Module } from '@nestjs/common';
+import { Module, forwardRef } from '@nestjs/common';
 import { BullModule } from '@nestjs/bullmq';
 import { ConfigService } from '@nestjs/config';
 import { SmsProcessor } from './sms.processor';
@@ -15,12 +15,11 @@ import { SMS_QUEUE } from './sms.queue';
           host: config.get('REDIS_HOST'),
           port: config.get<number>('REDIS_PORT'),
           password: config.get('REDIS_PASSWORD'),
-          tls: {},
         },
       }),
     }),
     BullModule.registerQueue({ name: SMS_QUEUE }),
-    OrdersModule,
+    forwardRef(() => OrdersModule),
   ],
   providers: [SmsProcessor, SmsQueueService],
   exports: [SmsQueueService],

@@ -1,20 +1,17 @@
-// ============================================================
-// OrdersModule — SMS activation lifecycle management
-// ============================================================
-
-import { Module } from '@nestjs/common';
+import { Module, forwardRef } from '@nestjs/common';
 import { OrdersService } from './orders.service';
 import { OrdersController } from './orders.controller';
-import { SmsPollingService } from './sms-polling.service';
 import { ProvidersModule } from '../providers/providers.module';
 import { WalletModule } from '../wallet/wallet.module';
+import { QueueModule } from '../queue/queue.module';
 
 @Module({
   imports: [
-    ProvidersModule,  // needs ProviderRegistryService
-    WalletModule,     // needs WalletService for debit/refund
+    ProvidersModule,
+    WalletModule,
+    forwardRef(() => QueueModule),
   ],
-  providers: [OrdersService, SmsPollingService],
+  providers: [OrdersService],
   controllers: [OrdersController],
   exports: [OrdersService],
 })

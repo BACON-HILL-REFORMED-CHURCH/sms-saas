@@ -1,6 +1,6 @@
 import { Processor, WorkerHost } from '@nestjs/bullmq';
 import { Job } from 'bullmq';
-import { Logger } from '@nestjs/common';
+import { Inject, Logger, forwardRef } from '@nestjs/common';
 import { OrdersService } from '../orders/orders.service';
 import { SMS_QUEUE, POLL_SMS_JOB, EXPIRE_ORDERS_JOB } from './sms.queue';
 
@@ -8,7 +8,10 @@ import { SMS_QUEUE, POLL_SMS_JOB, EXPIRE_ORDERS_JOB } from './sms.queue';
 export class SmsProcessor extends WorkerHost {
   private readonly logger = new Logger(SmsProcessor.name);
 
-  constructor(private readonly orders: OrdersService) {
+  constructor(
+    @Inject(forwardRef(() => OrdersService))
+    private readonly orders: OrdersService,
+  ) {
     super();
   }
 

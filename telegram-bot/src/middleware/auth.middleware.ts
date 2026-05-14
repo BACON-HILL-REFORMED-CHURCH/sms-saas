@@ -23,7 +23,7 @@ export const loginUser = async (ctx: Context): Promise<string | null> => {
     const initData = `user=${encodeURIComponent(JSON.stringify(user))}&hash=bot_bypass_${telegramId}`;
     
     const res = await api.post('/auth/telegram-webapp', { initData });
-    const token = res.data.accessToken;
+    const token = res.data.data?.accessToken || res.data.accessToken;
     tokenStore.set(telegramId, token);
     api.defaults.headers.common['Authorization'] = `Bearer ${token}`;
     return token;
