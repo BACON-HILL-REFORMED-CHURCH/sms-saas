@@ -14,7 +14,7 @@ import { t } from './i18n';
 import {
   loadState, saveUserLang, saveDigitalProducts, saveCoupons,
   saveReferrals, saveUserOrders, saveBannedUsers,
-  saveScheduledBroadcast, saveFlashSale,
+  saveScheduledBroadcast, saveFlashSale, saveBroadcastOptOut,
 } from './store';
 
 // ── Config ────────────────────────────────────────────────────
@@ -73,8 +73,10 @@ let userOrders       = new Map<number, string[]>();
 const paymentPolls   = new Map<string, NodeJS.Timeout>();
 const pendingDeposits= new Map<string, { chatId: number; amountUsd: number; credits: number }>();
 let digitalProducts  = new Map<string, DigitalProduct>();
-let bannedUsers      = new Set<number>();
+let bannedUsers         = new Set<number>();
+let broadcastOptOut     = new Set<number>();
 let flashSale: { percent: number; endsAt: string } | null = null;
+const errorAlertTimers  = new Map<string, number>(); // label → last alert ms
 
 let scheduledBroadcast: {
   message: string; photoUrl?: string;
@@ -82,7 +84,7 @@ let scheduledBroadcast: {
 } | null = null;
 
 async function runBroadcast(message: string, photoUrl?: string) {
-  const chatIds = [...sessions.keys()];
+  const chatIds = [...sessions.keys()].filter(id => !broadcastOptOut.has(id));
   let sent = 0, failed = 0;
   for (const id of chatIds) {
     try {
@@ -95,6 +97,16 @@ async function runBroadcast(message: string, photoUrl?: string) {
     } catch { failed++; }
   }
   return { sent, failed };
+}
+
+async function notifyAdminError(label: string, err: any) {
+  const now = Date.now();
+  if ((now - (errorAlertTimers.get(label) ?? 0)) < 10 * 60_000) return;
+  errorAlertTimers.set(label, now);
+  const ids = adminChatId ? [adminChatId] : ADMIN_TG_IDS;
+  for (const id of ids) {
+    try { await bot.telegram.sendMessage(id, `🚨 *Error: ${label}*\n\n\`${errMsg(err).slice(0, 300)}\``, { parse_mode: 'Markdown' }); } catch {}
+  }
 }
 
 function getLang(chatId: number): string { return userLang.get(chatId) ?? 'en'; }
@@ -500,7 +512,10 @@ async function showBalance(ctx: any, session: UserSession) {
       t(lang, 'balance_display', { balance, usd: (balance / CREDITS_PER_USD).toFixed(2) }),
       { parse_mode: 'Markdown' },
     );
-  } catch (err) { await ctx.reply(`❌ ${errMsg(err)}`); }
+  } catch (err) {
+    await ctx.reply(`❌ ${errMsg(err)}`);
+    notifyAdminError('Backend API /wallet/balance', err);
+  }
 }
 
 // ════════════════════════════════════════════════════════════════
@@ -514,16 +529,22 @@ async function showProfile(ctx: any, session: UserSession) {
     const { balance } = unwrap(res);
     const orderCount  = userOrders.get(chatId)?.length ?? 0;
     const refLink     = `https://t.me/${botUsername}?start=ref_${chatId}`;
+    const isOptedOut   = broadcastOptOut.has(chatId);
+    const optOutLabel  = isOptedOut ? '🔔 Enable Broadcasts' : '📵 Opt-out Broadcasts';
     await ctx.reply(
       `👤 *Profile*\n\n` +
       `📧 Email: \`${session.email}\`\n` +
       `💰 Balance: *${balance} credits* (≈ $${(balance / CREDITS_PER_USD).toFixed(2)})\n` +
       `📋 Orders this session: *${orderCount}*\n` +
-      `🔑 Role: *${session.role}*\n\n` +
+      `🔑 Role: *${session.role}*\n` +
+      `📢 Broadcasts: *${isOptedOut ? 'Off 🔕' : 'On 🔔'}*\n\n` +
       `👥 *Referral Link:*\n\`${refLink}\``,
       {
         parse_mode: 'Markdown',
-        ...Markup.inlineKeyboard([[Markup.button.callback('🚪 Logout', 'do_logout')]]),
+        ...Markup.inlineKeyboard([
+          [Markup.button.callback(optOutLabel, 'toggle_broadcast')],
+          [Markup.button.callback('🚪 Logout', 'do_logout')],
+        ]),
       },
     );
   } catch (err) { await ctx.reply(`❌ ${errMsg(err)}`); }
@@ -535,6 +556,21 @@ bot.action('do_logout', async (ctx) => {
   sessions.delete(chatId);
   await ctx.answerCbQuery();
   await ctx.reply(t(lang, 'logged_out'), Markup.removeKeyboard());
+});
+
+bot.action('toggle_broadcast', async (ctx) => {
+  const chatId = ctx.chat!.id;
+  if (broadcastOptOut.has(chatId)) {
+    broadcastOptOut.delete(chatId);
+    await ctx.answerCbQuery('🔔 Broadcasts enabled');
+  } else {
+    broadcastOptOut.add(chatId);
+    await ctx.answerCbQuery('📵 Broadcasts disabled');
+  }
+  saveBroadcastOptOut(broadcastOptOut);
+  await ctx.deleteMessage().catch(() => {});
+  const session = sessions.get(chatId);
+  if (session) await showProfile(ctx, session);
 });
 
 // ════════════════════════════════════════════════════════════════
@@ -859,6 +895,7 @@ bot.action(/^cbuy_(\d+)_(\d+)_(\d+)$/, async (ctx) => {
       const reason = purchase?.message ?? purchase?.error ?? JSON.stringify(purchase) ?? 'No numbers available.';
       console.error(`[cbuy] Purchase failed for country=${countryId} service=${serviceId}:`, reason);
       await ctx.reply(`❌ Purchase failed: ${reason}`);
+      notifyAdminError('SMSPool purchase failed', new Error(reason));
       return;
     }
 
@@ -1615,6 +1652,37 @@ bot.action('adm_stats', async (ctx) => {
   } catch (err) { await ctx.reply(`❌ ${errMsg(err)}`); }
 });
 
+bot.action('adm_rch_stats', async (ctx) => {
+  const session = sessions.get(ctx.chat!.id);
+  if (!session || session.role !== 'ADMIN') { await ctx.answerCbQuery(); return; }
+  await ctx.answerCbQuery();
+  try {
+    const [approved, rejected, pending_] = await Promise.all([
+      makeApi(botAdminToken!).get('/recharge/admin', { params: { status: 'APPROVED', limit: 100 } }),
+      makeApi(botAdminToken!).get('/recharge/admin', { params: { status: 'REJECTED', limit: 100 } }),
+      makeApi(botAdminToken!).get('/recharge/admin', { params: { status: 'PENDING',  limit: 100 } }),
+    ]);
+    const weekAgo = Date.now() - 7 * 24 * 3_600_000;
+    const toList  = (res: any): any[] => Array.isArray(res.data?.data) ? res.data.data : (Array.isArray(res.data) ? res.data : []);
+    const thisWeek= (list: any[]) => list.filter(r => new Date(r.createdAt).getTime() > weekAgo);
+
+    const apList  = thisWeek(toList(approved));
+    const rjList  = thisWeek(toList(rejected));
+    const pdList  = toList(pending_);
+
+    const apTotal = apList.reduce((s: number, r: any) => s + (r.amountUsd ?? (r.amount ?? 0) / 100), 0);
+
+    await ctx.reply(
+      `💳 *Recharge Stats — This Week*\n\n` +
+      `✅ Approved: *${apList.length}* ($${apTotal.toFixed(2)} USD)\n` +
+      `❌ Rejected: *${rjList.length}*\n` +
+      `⏳ Pending:  *${pdList.length}*\n\n` +
+      `_Tap 📋 Review Recharges to process pending._`,
+      { parse_mode: 'Markdown', ...Markup.inlineKeyboard([[Markup.button.callback('📋 Review Pending', 'adm_review')]]) },
+    );
+  } catch (err) { await ctx.reply(`❌ ${errMsg(err)}`); }
+});
+
 bot.action('adm_smsbal', async (ctx) => {
   const session = sessions.get(ctx.chat!.id);
   if (!session || session.role !== 'ADMIN') { await ctx.answerCbQuery(); return; }
@@ -1773,14 +1841,22 @@ async function showDigitalStore(ctx: any) {
     t(lang, 'digital_store_title'),
     {
       parse_mode: 'Markdown',
-      ...Markup.inlineKeyboard(
-        DIGITAL_CATEGORIES.map(cat => [
+      ...Markup.inlineKeyboard([
+        ...DIGITAL_CATEGORIES.map(cat => [
           Markup.button.callback(`${cat.emoji} ${cat.label}`, `dcat_${cat.id}`),
         ]),
-      ),
+        [Markup.button.callback('🔍 Search Products', 'dstore_search')],
+      ]),
     },
   );
 }
+
+bot.action('dstore_search', async (ctx) => {
+  const chatId = ctx.chat!.id;
+  pending.set(chatId, { state: 'digital_search', data: {} });
+  await ctx.answerCbQuery();
+  await ctx.reply('🔍 Type a product name or category to search:');
+});
 
 // Category → product list
 bot.action(/^dcat_(.+)$/, async (ctx) => {
@@ -1905,8 +1981,10 @@ bot.action(/^dbuy_(.+)$/, async (ctx) => {
     }
 
     await ctx.editMessageReplyMarkup({ inline_keyboard: [] }).catch(() => {});
+    const now = new Date().toLocaleString('en-GB', { timeZone: 'UTC', hour12: false });
     await ctx.reply(
-      t(lang, 'digital_success', { name: product.name, credentials: item.credentials }),
+      t(lang, 'digital_success', { name: product.name, credentials: item.credentials }) +
+      `\n\n🧾 *Receipt*\n📅 ${now} UTC\n💳 ${buyPrice} credits`,
       { parse_mode: 'Markdown' },
     );
   } catch (err) { await ctx.reply(`❌ ${errMsg(err)}`); }
@@ -1934,6 +2012,7 @@ bot.action('adm_digital', async (ctx) => {
         [Markup.button.callback('📦 Add Stock',         'adm_dp_stock')],
         [Markup.button.callback('✏️ Edit Product',      'adm_dp_edit')],
         [Markup.button.callback('🗑️ Delete Product',    'adm_dp_del')],
+        [Markup.button.callback('📥 Bulk Import (CSV)', 'adm_dp_bulk')],
       ]),
     },
   );
@@ -2037,6 +2116,67 @@ bot.action(/^adm_dp_dodel_(.+)$/, async (ctx) => {
 });
 
 // Edit product — select product
+bot.action('adm_dp_bulk', async (ctx) => {
+  const chatId = ctx.chat!.id;
+  const session = sessions.get(chatId);
+  if (!session || session.role !== 'ADMIN') { await ctx.answerCbQuery(); return; }
+  pending.set(chatId, { state: 'adm_dp_bulk_wait', data: {} });
+  await ctx.answerCbQuery();
+  await ctx.reply(
+    `📥 *Bulk Import*\n\n` +
+    `Send a *.txt* file. Each line = one credential:\n\n` +
+    `\`category|Product Name|Description|Price|credential\`\n\n` +
+    `*Example:*\n` +
+    `\`email|Gmail Account|Fresh 2024|500|user@gmail.com:pass123\`\n` +
+    `\`social|Instagram|Aged account|300|insta_user:insta_pass\`\n\n` +
+    `_Lines with same category+name+price are grouped into one product._`,
+    { parse_mode: 'Markdown' },
+  );
+});
+
+// Document handler for bulk import
+bot.on('document', async (ctx) => {
+  const chatId  = ctx.chat.id;
+  const session = sessions.get(chatId);
+  const state   = pending.get(chatId);
+  if (!session || session.role !== 'ADMIN' || state?.state !== 'adm_dp_bulk_wait') return;
+  pending.delete(chatId);
+
+  try {
+    const fileLink = await ctx.telegram.getFileLink(ctx.message.document.file_id);
+    const res      = await axios.get(fileLink.href, { responseType: 'text' });
+    const lines    = (res.data as string).split('\n').map((l: string) => l.trim()).filter(Boolean);
+
+    let created = 0, added = 0, errors = 0;
+    for (const line of lines) {
+      const parts = line.split('|');
+      if (parts.length < 5) { errors++; continue; }
+      const [category, name, description, priceStr, credential] = parts;
+      const price = parseInt(priceStr);
+      if (isNaN(price)) { errors++; continue; }
+
+      // Find existing product with same key or create new
+      const key     = `${category.trim()}|${name.trim()}|${price}`;
+      let   product = [...digitalProducts.values()].find(p =>
+        p.category === category.trim() && p.name === name.trim() && p.price === price,
+      );
+      if (!product) {
+        const id = `dp_${Date.now()}_${Math.random().toString(36).slice(2,6)}`;
+        product  = { id, category: category.trim(), name: name.trim(), description: description.trim(), price, stock: [] };
+        digitalProducts.set(id, product);
+        created++;
+      }
+      product.stock.push({ id: `di_${Date.now()}_${Math.random().toString(36).slice(2)}`, credentials: credential.trim() });
+      added++;
+    }
+    saveDigitalProducts(digitalProducts);
+    await ctx.reply(
+      `✅ *Bulk Import Done!*\n\n📦 Products created: *${created}*\n🔑 Credentials added: *${added}*\n❌ Skipped (bad format): *${errors}*`,
+      { parse_mode: 'Markdown' },
+    );
+  } catch (err) { await ctx.reply(`❌ Import failed: ${errMsg(err)}`); }
+});
+
 bot.action('adm_dp_edit', async (ctx) => {
   await ctx.answerCbQuery();
   if (!digitalProducts.size) { await ctx.reply('📭 No products yet.'); return; }
@@ -2280,10 +2420,11 @@ bot.on('text', async (ctx) => {
       await ctx.reply('🔧 *Admin Panel*', {
         parse_mode: 'Markdown',
         ...Markup.inlineKeyboard([
-          [Markup.button.callback('📊 Statistics',     'adm_stats')],
-          [Markup.button.callback('👥 Users List',     'adm_users')],
-          [Markup.button.callback('💰 Add Balance',    'adm_addbal')],
-          [Markup.button.callback('🎟️ Create Coupon',  'adm_coupon')],
+          [Markup.button.callback('📊 Statistics',       'adm_stats')],
+          [Markup.button.callback('💳 Recharge Stats',  'adm_rch_stats')],
+          [Markup.button.callback('👥 Users List',       'adm_users')],
+          [Markup.button.callback('💰 Add Balance',      'adm_addbal')],
+          [Markup.button.callback('🎟️ Create Coupon',   'adm_coupon')],
           [Markup.button.callback('📢 Broadcast Now',    'adm_broadcast')],
           [Markup.button.callback('🎯 Targeted Broadcast','adm_broadcast_target')],
           [Markup.button.callback('⏰ Scheduled Post',   'adm_sched')],
@@ -2693,6 +2834,27 @@ bot.on('text', async (ctx) => {
     return;
   }
 
+  // ── DIGITAL STORE: Search ──
+  if (state.state === 'digital_search') {
+    pending.delete(chatId);
+    const query   = text.toLowerCase().trim();
+    const results = [...digitalProducts.values()].filter(p =>
+      p.name.toLowerCase().includes(query) ||
+      p.category.toLowerCase().includes(query) ||
+      p.description.toLowerCase().includes(query),
+    );
+    if (!results.length) { await ctx.reply(`🔍 No products found for "*${text}*"`, { parse_mode: 'Markdown' }); return; }
+    const buttons = results.slice(0, 10).map(p => {
+      const avail = availableStock(p).length;
+      return [Markup.button.callback(`${p.name} — ${p.price}cr (${avail} left)`, `dprod_${p.id}`)];
+    });
+    await ctx.reply(`🔍 *Results for "${text}":*`, {
+      parse_mode: 'Markdown',
+      ...Markup.inlineKeyboard(buttons),
+    });
+    return;
+  }
+
   // ── DIGITAL STORE ADMIN: Product name ──
   if (state.state === 'adm_dp_name') {
     data.name = text.trim();
@@ -2900,8 +3062,9 @@ async function bootstrap() {
     referrals      = state.referrals;
     referred       = state.referred;
     userOrders     = state.userOrders;
-    bannedUsers    = state.bannedUsers;
-    flashSale      = state.flashSale;
+    bannedUsers      = state.bannedUsers;
+    broadcastOptOut  = state.broadcastOptOut;
+    flashSale        = state.flashSale;
 
     // Restart scheduled broadcast timer if one was active
     if (state.scheduledBroadcast) {

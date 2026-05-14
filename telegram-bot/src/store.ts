@@ -81,22 +81,27 @@ export async function saveFlashSale(fs: { percent: number; endsAt: string } | nu
   await rset('bot:flashSale', JSON.stringify(fs ?? null));
 }
 
+export async function saveBroadcastOptOut(optOut: Set<number>) {
+  await rset('bot:broadcastOptOut', JSON.stringify([...optOut]));
+}
+
 // ── Load all on startup ────────────────────────────────────────
 
 export interface BotState {
-  userLang:          Map<number, string>;
-  digitalProducts:   Map<string, any>;
-  coupons:           Map<string, any>;
-  referrals:         Map<number, number>;
-  referred:          Set<number>;
-  userOrders:        Map<number, string[]>;
-  bannedUsers:       Set<number>;
+  userLang:           Map<number, string>;
+  digitalProducts:    Map<string, any>;
+  coupons:            Map<string, any>;
+  referrals:          Map<number, number>;
+  referred:           Set<number>;
+  userOrders:         Map<number, string[]>;
+  bannedUsers:        Set<number>;
+  broadcastOptOut:    Set<number>;
   scheduledBroadcast: { message: string; photoUrl?: string; intervalMs: number } | null;
-  flashSale:         { percent: number; endsAt: string } | null;
+  flashSale:          { percent: number; endsAt: string } | null;
 }
 
 export async function loadState(): Promise<BotState> {
-  const [ulRaw, dpRaw, cpRaw, rfRaw, rdRaw, uoRaw, buRaw, sbRaw, fsRaw] = await Promise.all([
+  const [ulRaw, dpRaw, cpRaw, rfRaw, rdRaw, uoRaw, buRaw, ooRaw, sbRaw, fsRaw] = await Promise.all([
     rget('bot:userLang'),
     rget('bot:digitalProducts'),
     rget('bot:coupons'),
@@ -104,6 +109,7 @@ export async function loadState(): Promise<BotState> {
     rget('bot:referred'),
     rget('bot:userOrders'),
     rget('bot:bannedUsers'),
+    rget('bot:broadcastOptOut'),
     rget('bot:scheduledBroadcast'),
     rget('bot:flashSale'),
   ]);
@@ -140,8 +146,9 @@ export async function loadState(): Promise<BotState> {
     ? new Set<number>(JSON.parse(buRaw) as number[])
     : new Set<number>();
 
+  const broadcastOptOut    = ooRaw ? new Set<number>(JSON.parse(ooRaw) as number[]) : new Set<number>();
   const scheduledBroadcast = sbRaw ? JSON.parse(sbRaw) : null;
   const flashSale          = fsRaw ? JSON.parse(fsRaw) : null;
 
-  return { userLang, digitalProducts, coupons, referrals, referred, userOrders, bannedUsers, scheduledBroadcast, flashSale };
+  return { userLang, digitalProducts, coupons, referrals, referred, userOrders, bannedUsers, broadcastOptOut, scheduledBroadcast, flashSale };
 }
