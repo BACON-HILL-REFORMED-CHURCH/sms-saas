@@ -75,6 +75,7 @@ const translations: Record<Lang, Record<string, string>> = {
     btn_referral: '👥 Referral',
     btn_admin:    '⚙️ Admin Panel',
     btn_logout:   '🚪 Logout',
+    btn_profile:  '👤 Profile',
     btn_cancel:   '❌ Cancel',
 
     // ── Balance ──
@@ -170,6 +171,7 @@ const translations: Record<Lang, Record<string, string>> = {
     btn_referral: '👥 الإحالة',
     btn_admin:    '⚙️ لوحة الإدارة',
     btn_logout:   '🚪 تسجيل الخروج',
+    btn_profile:  '👤 الملف الشخصي',
     btn_cancel:   '❌ إلغاء',
 
     // ── Support ──
@@ -285,6 +287,7 @@ const translations: Record<Lang, Record<string, string>> = {
     btn_referral: '👥 Parrainage',
     btn_admin:    '⚙️ Admin Panel',
     btn_logout:   '🚪 Déconnexion',
+    btn_profile:  '👤 Profil',
     btn_cancel:   '❌ Annuler',
 
     // ── Support ──
@@ -400,6 +403,7 @@ const translations: Record<Lang, Record<string, string>> = {
     btn_referral: '👥 Referral',
     btn_admin:    '⚙️ Admin Panel',
     btn_logout:   '🚪 Keluar',
+    btn_profile:  '👤 Profil',
     btn_cancel:   '❌ Batal',
 
     // ── Support ──

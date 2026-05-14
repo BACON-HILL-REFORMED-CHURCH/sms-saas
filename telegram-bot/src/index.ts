@@ -325,10 +325,11 @@ function getKeyboard(chatId: number, role: string) {
     [t(lang, 'btn_buy'),           t(lang, 'btn_esim')],
     [t(lang, 'btn_digital_store'), t(lang, 'btn_orders')],
     [t(lang, 'btn_coupon'),        t(lang, 'btn_support')],
-    [t(lang, 'btn_referral'),      role === 'ADMIN' ? t(lang, 'btn_admin') : t(lang, 'btn_logout')],
+    [t(lang, 'btn_referral'),      t(lang, 'btn_profile')],
+    role === 'ADMIN'
+      ? [t(lang, 'btn_admin'), t(lang, 'btn_logout')]
+      : [t(lang, 'btn_logout')],
   ];
-
-  if (role === 'ADMIN') rows.push([t(lang, 'btn_logout')]);
 
   if (appUrl) {
     rows.unshift([Markup.button.webApp('🌐 Open App', appUrl)]);
@@ -493,6 +494,40 @@ async function showBalance(ctx: any, session: UserSession) {
     );
   } catch (err) { await ctx.reply(`❌ ${errMsg(err)}`); }
 }
+
+// ════════════════════════════════════════════════════════════════
+// PROFILE
+// ════════════════════════════════════════════════════════════════
+async function showProfile(ctx: any, session: UserSession) {
+  const chatId = ctx.chat?.id ?? ctx.chat!.id;
+  const lang   = getLang(chatId);
+  try {
+    const res        = await makeApi(session.token).get('/wallet/balance');
+    const { balance } = unwrap(res);
+    const orderCount  = userOrders.get(chatId)?.length ?? 0;
+    const refLink     = `https://t.me/${botUsername}?start=ref_${chatId}`;
+    await ctx.reply(
+      `👤 *Profile*\n\n` +
+      `📧 Email: \`${session.email}\`\n` +
+      `💰 Balance: *${balance} credits* (≈ $${(balance / CREDITS_PER_USD).toFixed(2)})\n` +
+      `📋 Orders this session: *${orderCount}*\n` +
+      `🔑 Role: *${session.role}*\n\n` +
+      `👥 *Referral Link:*\n\`${refLink}\``,
+      {
+        parse_mode: 'Markdown',
+        ...Markup.inlineKeyboard([[Markup.button.callback('🚪 Logout', 'do_logout')]]),
+      },
+    );
+  } catch (err) { await ctx.reply(`❌ ${errMsg(err)}`); }
+}
+
+bot.action('do_logout', async (ctx) => {
+  const chatId = ctx.chat!.id;
+  const lang   = getLang(chatId);
+  sessions.delete(chatId);
+  await ctx.answerCbQuery();
+  await ctx.reply(t(lang, 'logged_out'), Markup.removeKeyboard());
+});
 
 // ════════════════════════════════════════════════════════════════
 // DEPOSIT — Cryptomus crypto payments
@@ -779,6 +814,15 @@ bot.action(/^cbuy_(\d+)_(\d+)_(\d+)$/, async (ctx) => {
 
   const [, countryId, serviceId, creditsStr] = ctx.match;
   const credits = parseInt(creditsStr);
+
+  // Anti-spam: max 5 active orders per user
+  const activeCount = [...smsOrders.values()].filter(o => o.chatId === chatId && o.status === 'pending').length;
+  if (activeCount >= 5) {
+    await ctx.answerCbQuery('❌ Max 5 active orders at once');
+    await ctx.reply('❌ You already have 5 active orders. Wait for them to complete before placing a new one.');
+    return;
+  }
+
   await ctx.answerCbQuery('⏳ Processing...');
 
   try {
@@ -916,6 +960,20 @@ function startAutoPolling(chatId: number, orderId: string, session: UserSession)
           `💳 *${order?.credits} credits deducted.*`,
           { parse_mode: 'Markdown' },
         );
+
+        // Notify admin
+        const notifyIds = adminChatId ? [adminChatId] : ADMIN_TG_IDS;
+        for (const adminId of notifyIds) {
+          try {
+            await bot.telegram.sendMessage(adminId,
+              `✅ *SMS Order Done!*\n\n` +
+              `👤 ${sessions.get(order!.chatId)?.email ?? String(order!.chatId)}\n` +
+              `📱 \`${order?.phoneNumber}\`\n` +
+              `🔐 Code: \`${code}\``,
+              { parse_mode: 'Markdown' },
+            );
+          } catch {}
+        }
         return;
       }
 
@@ -1540,7 +1598,7 @@ bot.action('adm_stats', async (ctx) => {
     await ctx.reply(
       `📊 *Platform Statistics*\n\n` +
       `👥 Users: *${s.totalUsers??0}*\n📋 Orders: *${s.totalOrders??0}*\n✅ Completed: *${s.receivedOrders??0}*\n` +
-      `💰 Revenue: *${s.totalRevenue??0}* credits\n\n` +
+      `💰 Revenue: *${s.totalRevenue??0}* credits (≈ $${((s.totalRevenue??0) / CREDITS_PER_USD).toFixed(2)} USD)\n\n` +
       `🎟️ Coupons: *${coupons.size}*\n👥 Referrals: *${referrals.size}*\n` +
       `📱 SMS Orders (session): *${smsOrders.size}*\n🔔 Polling: *${activePolls.size}*`,
       { parse_mode:'Markdown' },
@@ -2125,6 +2183,7 @@ bot.on('text', async (ctx) => {
     if (text === t(lang, 'btn_esim'))     return showEsimProducts(ctx, session);
     if (text === t(lang, 'btn_coupon'))   return showRedeemCoupon(ctx);
     if (text === t(lang, 'btn_referral')) return showReferral(ctx);
+    if (text === t(lang, 'btn_profile'))  return showProfile(ctx, session);
     if (text === t(lang, 'btn_admin') && session.role === 'ADMIN') {
       await ctx.reply('🔧 *Admin Panel*', {
         parse_mode: 'Markdown',
@@ -2185,6 +2244,17 @@ bot.on('text', async (ctx) => {
     try {
       await makeApi().post('/auth/register', { email:data.email, password:text });
       await ctx.reply(t(lang, 'register_success'), { parse_mode:'Markdown' });
+
+      // Notify admin of new registration
+      const regNotifyIds = adminChatId ? [adminChatId] : ADMIN_TG_IDS;
+      for (const adminId of regNotifyIds) {
+        try {
+          await bot.telegram.sendMessage(adminId,
+            `👤 *New User Registered!*\n\n📧 ${data.email}\n🌐 Lang: ${getLang(chatId).toUpperCase()}`,
+            { parse_mode: 'Markdown' },
+          );
+        } catch {}
+      }
 
       // Credit referral bonus to whoever shared the link
       const referrerId = referrals.get(chatId);
