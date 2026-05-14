@@ -3,6 +3,7 @@
 // ============================================================
 
 import { Module } from '@nestjs/common';
+import { APP_INTERCEPTOR } from '@nestjs/core';
 import { ConfigModule } from '@nestjs/config';
 import { ThrottlerModule } from '@nestjs/throttler';
 import { ScheduleModule } from '@nestjs/schedule';
@@ -10,6 +11,7 @@ import { PrismaModule } from './prisma/prisma.module';
 import { RechargeModule } from './recharge/recharge.module';
 import { QueueModule } from './queue/queue.module';
 import { RedisModule } from './redis/redis.module';
+import { IdempotencyInterceptor } from './common/interceptors/idempotency.interceptor';
 
 // Feature modules
 import { AuthModule }      from './auth/auth.module';
@@ -45,6 +47,12 @@ import { EsimModule }       from './esim/esim.module';
     OrdersModule,
     AdminModule,
     EsimModule,
+  ],
+  providers: [
+    {
+      provide: APP_INTERCEPTOR,
+      useClass: IdempotencyInterceptor,
+    },
   ],
 })
 export class AppModule {}
