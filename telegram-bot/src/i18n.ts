@@ -27,6 +27,29 @@ const translations: Record<Lang, Record<string, string>> = {
     login_error:       '❌ {msg}\n\nTry again: /start',
     register_error:    '❌ {msg}\n\nTry again: /start',
 
+    // ── Digital Store ──
+    btn_digital_store:    '🛒 Digital Store',
+    digital_store_title:  '🛒 *Digital Store*\n\nChoose a category:',
+    digital_select_prod:  'Select a product:',
+    digital_no_products:  '📭 No products in this category yet.',
+    digital_out_of_stock: '❌ Out of stock. Check back later!',
+    digital_confirm:
+      '🛒 *Confirm Purchase*\n\n' +
+      '📦 *{name}*\n{desc}\n' +
+      '💰 Price: *{price} credits*\n' +
+      '📊 Stock: {stock} available\n' +
+      '💳 Your balance: *{balance} credits*',
+    digital_btn_buy:   '✅ Buy Now',
+    digital_success:
+      '✅ *Purchase Successful!*\n\n' +
+      '📦 {name}\n\n' +
+      '📩 *Your credentials:*\n`{credentials}`\n\n' +
+      '_Keep these safe — shown only once!_',
+    digital_no_balance:
+      '❌ *Insufficient balance*\n\n' +
+      'Need: *{price} credits*\nYou have: *{balance} credits*\n\n' +
+      'Tap 💳 Deposit to top up.',
+
     // ── Keyboard button labels ──
     btn_balance:  '💰 Balance',
     btn_deposit:  '💳 Deposit',
@@ -133,6 +156,21 @@ const translations: Record<Lang, Record<string, string>> = {
     btn_logout:   '🚪 تسجيل الخروج',
     btn_cancel:   '❌ إلغاء',
 
+    // ── Digital Store ──
+    btn_digital_store:    '🛒 المتجر الرقمي',
+    digital_store_title:  '🛒 *المتجر الرقمي*\n\nاختر فئة:',
+    digital_select_prod:  'اختر منتجًا:',
+    digital_no_products:  '📭 لا توجد منتجات في هذه الفئة حالياً.',
+    digital_out_of_stock: '❌ نفد المخزون. تحقق لاحقاً!',
+    digital_confirm:
+      '🛒 *تأكيد الشراء*\n\n📦 *{name}*\n{desc}\n' +
+      '💰 السعر: *{price} كريديت*\n📊 المتوفر: {stock}\n💳 رصيدك: *{balance} كريديت*',
+    digital_btn_buy:   '✅ اشترِ الآن',
+    digital_success:
+      '✅ *تمت عملية الشراء!*\n\n📦 {name}\n\n📩 *بياناتك:*\n`{credentials}`\n\n_احتفظ بها في مكان آمن!_',
+    digital_no_balance:
+      '❌ *رصيد غير كافٍ*\n\nتحتاج: *{price} كريديت*\nلديك: *{balance} كريديت*\n\nاضغط 💳 إيداع للشحن.',
+
     balance_display: '💰 *رصيدك*\n\n*{balance}* كريديت\n≈ ${usd} دولار',
 
     deposit_crypto:
@@ -218,6 +256,21 @@ const translations: Record<Lang, Record<string, string>> = {
     btn_logout:   '🚪 Déconnexion',
     btn_cancel:   '❌ Annuler',
 
+    // ── Digital Store ──
+    btn_digital_store:    '🛒 Boutique Digitale',
+    digital_store_title:  '🛒 *Boutique Digitale*\n\nChoisissez une catégorie:',
+    digital_select_prod:  'Sélectionnez un produit:',
+    digital_no_products:  '📭 Aucun produit disponible dans cette catégorie.',
+    digital_out_of_stock: '❌ Rupture de stock. Revenez plus tard!',
+    digital_confirm:
+      '🛒 *Confirmer l\'Achat*\n\n📦 *{name}*\n{desc}\n' +
+      '💰 Prix: *{price} crédits*\n📊 Stock: {stock} restants\n💳 Votre solde: *{balance} crédits*',
+    digital_btn_buy:   '✅ Acheter',
+    digital_success:
+      '✅ *Achat Réussi!*\n\n📦 {name}\n\n📩 *Vos identifiants:*\n`{credentials}`\n\n_Gardez-les en sécurité!_',
+    digital_no_balance:
+      '❌ *Solde insuffisant*\n\nNécessaire: *{price} crédits*\nVous avez: *{balance} crédits*\n\nAppuyez sur 💳 Dépôt pour recharger.',
+
     balance_display: '💰 *Votre Solde*\n\n*{balance}* crédits\n≈ ${usd} USD',
 
     deposit_crypto:
@@ -302,6 +355,21 @@ const translations: Record<Lang, Record<string, string>> = {
     btn_admin:    '⚙️ Admin Panel',
     btn_logout:   '🚪 Keluar',
     btn_cancel:   '❌ Batal',
+
+    // ── Digital Store ──
+    btn_digital_store:    '🛒 Toko Digital',
+    digital_store_title:  '🛒 *Toko Digital*\n\nPilih kategori:',
+    digital_select_prod:  'Pilih produk:',
+    digital_no_products:  '📭 Belum ada produk di kategori ini.',
+    digital_out_of_stock: '❌ Stok habis. Coba lagi nanti!',
+    digital_confirm:
+      '🛒 *Konfirmasi Pembelian*\n\n📦 *{name}*\n{desc}\n' +
+      '💰 Harga: *{price} kredit*\n📊 Stok: {stock} tersisa\n💳 Saldo Anda: *{balance} kredit*',
+    digital_btn_buy:   '✅ Beli Sekarang',
+    digital_success:
+      '✅ *Pembelian Berhasil!*\n\n📦 {name}\n\n📩 *Kredensial Anda:*\n`{credentials}`\n\n_Simpan dengan aman!_',
+    digital_no_balance:
+      '❌ *Saldo tidak cukup*\n\nPerlu: *{price} kredit*\nAnda punya: *{balance} kredit*\n\nKetuk 💳 Deposit untuk mengisi.',
 
     balance_display: '💰 *Saldo Anda*\n\n*{balance}* kredit\n≈ ${usd} USD',
 

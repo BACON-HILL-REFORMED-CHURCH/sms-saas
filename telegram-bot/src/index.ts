@@ -49,6 +49,9 @@ interface SMSLocalOrder {
 interface SMSCountry { ID: string; name: string; short_name: string; }
 interface SMSService  { ID: string; name: string; short_name: string; }
 
+interface DigitalItem    { id: string; credentials: string; soldTo?: number; soldAt?: Date; }
+interface DigitalProduct { id: string; category: string; name: string; description: string; price: number; stock: DigitalItem[]; }
+
 // ── Storage ───────────────────────────────────────────────────
 const sessions    = new Map<number, UserSession>();
 const userLang    = new Map<number, string>();        // chatId → 'en'|'ar'|'fr'|'id'
@@ -61,6 +64,7 @@ const smsOrders      = new Map<string, SMSLocalOrder>();
 const userOrders     = new Map<number, string[]>();
 const paymentPolls   = new Map<string, NodeJS.Timeout>(); // uuid → interval
 const pendingDeposits= new Map<string, { chatId: number; amountUsd: number; credits: number }>(); // uuid → info
+const digitalProducts= new Map<string, DigitalProduct>(); // productId → product
 
 function getLang(chatId: number): string { return userLang.get(chatId) ?? 'en'; }
 
@@ -271,6 +275,19 @@ function startPaymentPolling(uuid: string) {
   paymentPolls.set(uuid, t);
 }
 
+// ── Digital Store categories ──────────────────────────────────
+const DIGITAL_CATEGORIES = [
+  { id: 'email',     emoji: '📧', label: 'Email Accounts' },
+  { id: 'social',    emoji: '📱', label: 'Social Media' },
+  { id: 'streaming', emoji: '🎬', label: 'Streaming' },
+  { id: 'gaming',    emoji: '🎮', label: 'Gaming' },
+  { id: 'software',  emoji: '🔑', label: 'Software Licenses' },
+] as const;
+
+function availableStock(p: DigitalProduct): DigitalItem[] {
+  return p.stock.filter(i => !i.soldTo);
+}
+
 // ── Keyboards ─────────────────────────────────────────────────
 function getKeyboard(chatId: number, role: string) {
   const lang   = getLang(chatId);
@@ -279,10 +296,11 @@ function getKeyboard(chatId: number, role: string) {
     : null;
 
   const rows: any[] = [
-    [t(lang, 'btn_balance'),  t(lang, 'btn_deposit')],
-    [t(lang, 'btn_buy'),      t(lang, 'btn_esim')],
-    [t(lang, 'btn_orders'),   t(lang, 'btn_coupon')],
-    [t(lang, 'btn_referral'), role === 'ADMIN' ? t(lang, 'btn_admin') : t(lang, 'btn_logout')],
+    [t(lang, 'btn_balance'),       t(lang, 'btn_deposit')],
+    [t(lang, 'btn_buy'),           t(lang, 'btn_esim')],
+    [t(lang, 'btn_digital_store'), t(lang, 'btn_orders')],
+    [t(lang, 'btn_coupon'),        t(lang, 'btn_referral')],
+    [role === 'ADMIN' ? t(lang, 'btn_admin') : t(lang, 'btn_logout')],
   ];
 
   if (role === 'ADMIN') rows.push([t(lang, 'btn_logout')]);
@@ -1566,6 +1584,253 @@ bot.action('adm_broadcast', async (ctx) => {
 });
 
 // ════════════════════════════════════════════════════════════════
+// DIGITAL STORE — User flow
+// ════════════════════════════════════════════════════════════════
+async function showDigitalStore(ctx: any) {
+  const chatId = ctx.chat?.id;
+  const lang   = getLang(chatId);
+  await ctx.reply(
+    t(lang, 'digital_store_title'),
+    {
+      parse_mode: 'Markdown',
+      ...Markup.inlineKeyboard(
+        DIGITAL_CATEGORIES.map(cat => [
+          Markup.button.callback(`${cat.emoji} ${cat.label}`, `dcat_${cat.id}`),
+        ]),
+      ),
+    },
+  );
+}
+
+// Category → product list
+bot.action(/^dcat_(.+)$/, async (ctx) => {
+  const catId   = ctx.match[1];
+  const chatId  = ctx.chat!.id;
+  const lang    = getLang(chatId);
+  await ctx.answerCbQuery();
+
+  const cat      = DIGITAL_CATEGORIES.find(c => c.id === catId);
+  const products = [...digitalProducts.values()].filter(p => p.category === catId);
+
+  if (!products.length) {
+    await ctx.reply(t(lang, 'digital_no_products'));
+    return;
+  }
+
+  const buttons = products.map(p => {
+    const qty  = availableStock(p).length;
+    const icon = qty > 0 ? '🟢' : '🔴';
+    return [Markup.button.callback(`${icon} ${p.name} — ${p.price} cr (${qty} left)`, `dprod_${p.id}`)];
+  });
+
+  await ctx.reply(
+    `${cat?.emoji} *${cat?.label}*\n\n${t(lang, 'digital_select_prod')}`,
+    { parse_mode: 'Markdown', ...Markup.inlineKeyboard(buttons) },
+  );
+});
+
+// Product → confirm purchase
+bot.action(/^dprod_(.+)$/, async (ctx) => {
+  const productId = ctx.match[1];
+  const chatId    = ctx.chat!.id;
+  const lang      = getLang(chatId);
+  const session   = sessions.get(chatId);
+  await ctx.answerCbQuery();
+
+  if (!session) { await ctx.reply(t(lang, 'unauthorized')); return; }
+
+  const product = digitalProducts.get(productId);
+  if (!product) { await ctx.reply('❌ Product not found.'); return; }
+
+  const qty = availableStock(product).length;
+  if (qty === 0) { await ctx.reply(t(lang, 'digital_out_of_stock')); return; }
+
+  try {
+    const res     = await makeApi(session.token).get('/wallet/balance');
+    const balance = unwrap(res).balance as number;
+
+    if (balance < product.price) {
+      await ctx.reply(
+        t(lang, 'digital_no_balance', { price: product.price, balance }),
+        { parse_mode: 'Markdown' },
+      );
+      return;
+    }
+
+    const desc = product.description ? `_${product.description}_\n\n` : '';
+    await ctx.reply(
+      t(lang, 'digital_confirm', { name: product.name, desc, price: product.price, stock: qty, balance }),
+      {
+        parse_mode: 'Markdown',
+        ...Markup.inlineKeyboard([
+          [
+            Markup.button.callback(t(lang, 'digital_btn_buy'), `dbuy_${productId}`),
+            Markup.button.callback('❌', 'digital_cancel'),
+          ],
+        ]),
+      },
+    );
+  } catch (err) { await ctx.reply(`❌ ${errMsg(err)}`); }
+});
+
+// Confirm → deduct + deliver
+bot.action(/^dbuy_(.+)$/, async (ctx) => {
+  const productId = ctx.match[1];
+  const chatId    = ctx.chat!.id;
+  const lang      = getLang(chatId);
+  const session   = sessions.get(chatId);
+  await ctx.answerCbQuery('⏳ Processing...');
+
+  if (!session) { await ctx.reply(t(lang, 'unauthorized')); return; }
+  if (!botAdminToken) { await ctx.reply('❌ Try again in a moment.'); return; }
+
+  const product = digitalProducts.get(productId);
+  if (!product) { await ctx.reply('❌ Product not found.'); return; }
+
+  const item = availableStock(product)[0];
+  if (!item) { await ctx.reply(t(lang, 'digital_out_of_stock')); return; }
+
+  try {
+    await makeApi(botAdminToken).post('/admin/balance/adjust', {
+      userId: session.userId,
+      amount: -product.price,
+      reason: `Digital: ${product.name}`,
+    });
+    item.soldTo = chatId;
+    item.soldAt = new Date();
+
+    await ctx.editMessageReplyMarkup({ inline_keyboard: [] }).catch(() => {});
+    await ctx.reply(
+      t(lang, 'digital_success', { name: product.name, credentials: item.credentials }),
+      { parse_mode: 'Markdown' },
+    );
+  } catch (err) { await ctx.reply(`❌ ${errMsg(err)}`); }
+});
+
+bot.action('digital_cancel', async (ctx) => {
+  await ctx.answerCbQuery('Cancelled');
+  await ctx.editMessageReplyMarkup({ inline_keyboard: [] }).catch(() => {});
+});
+
+// ════════════════════════════════════════════════════════════════
+// DIGITAL STORE — Admin management
+// ════════════════════════════════════════════════════════════════
+bot.action('adm_digital', async (ctx) => {
+  const session = sessions.get(ctx.chat!.id);
+  if (!session || session.role !== 'ADMIN') { await ctx.answerCbQuery(); return; }
+  await ctx.answerCbQuery();
+  await ctx.reply(
+    '🛒 *Digital Store Manager*',
+    {
+      parse_mode: 'Markdown',
+      ...Markup.inlineKeyboard([
+        [Markup.button.callback('📋 List All Products', 'adm_dp_list')],
+        [Markup.button.callback('➕ Add Product',       'adm_dp_add')],
+        [Markup.button.callback('📦 Add Stock',         'adm_dp_stock')],
+        [Markup.button.callback('🗑️ Delete Product',    'adm_dp_del')],
+      ]),
+    },
+  );
+});
+
+// List all products
+bot.action('adm_dp_list', async (ctx) => {
+  await ctx.answerCbQuery();
+  if (!digitalProducts.size) { await ctx.reply('📭 No products yet.'); return; }
+  for (const cat of DIGITAL_CATEGORIES) {
+    const products = [...digitalProducts.values()].filter(p => p.category === cat.id);
+    if (!products.length) continue;
+    let msg = `${cat.emoji} *${cat.label}*\n`;
+    for (const p of products) {
+      const qty = availableStock(p).length;
+      msg += `\n• ${p.name} — ${p.price} cr | 📦 ${qty} in stock | ID: \`${p.id}\``;
+    }
+    await ctx.reply(msg, { parse_mode: 'Markdown' });
+  }
+});
+
+// Add product — step 1: choose category
+bot.action('adm_dp_add', async (ctx) => {
+  await ctx.answerCbQuery();
+  await ctx.reply(
+    '➕ *Add Product*\n\nSelect category:',
+    {
+      parse_mode: 'Markdown',
+      ...Markup.inlineKeyboard(
+        DIGITAL_CATEGORIES.map(c => [Markup.button.callback(`${c.emoji} ${c.label}`, `adm_dp_cat_${c.id}`)]),
+      ),
+    },
+  );
+});
+
+// Add product — step 2: category chosen → ask name
+bot.action(/^adm_dp_cat_(.+)$/, async (ctx) => {
+  const catId  = ctx.match[1];
+  const chatId = ctx.chat!.id;
+  await ctx.answerCbQuery();
+  pending.set(chatId, { state: 'adm_dp_name', data: { category: catId } });
+  await ctx.reply(`📝 Product name?\n_Example: Netflix Premium, Gmail Aged_`, { parse_mode: 'Markdown' });
+});
+
+// Add stock — select product
+bot.action('adm_dp_stock', async (ctx) => {
+  await ctx.answerCbQuery();
+  if (!digitalProducts.size) { await ctx.reply('📭 No products yet. Add a product first.'); return; }
+  const buttons = [...digitalProducts.values()].map(p => [
+    Markup.button.callback(`${p.name} (${availableStock(p).length} left)`, `adm_dp_addstock_${p.id}`),
+  ]);
+  await ctx.reply('📦 Select product to add stock to:', Markup.inlineKeyboard(buttons));
+});
+
+bot.action(/^adm_dp_addstock_(.+)$/, async (ctx) => {
+  const productId = ctx.match[1];
+  const chatId    = ctx.chat!.id;
+  await ctx.answerCbQuery();
+  const product = digitalProducts.get(productId);
+  if (!product) { await ctx.reply('❌ Product not found.'); return; }
+  pending.set(chatId, { state: 'adm_dp_creds', data: { productId } });
+  await ctx.reply(
+    `📦 *Add stock to: ${product.name}*\n\nPaste credentials — one per line:\n_Example:_\n\`user1@gmail.com:pass1\`\n\`user2@gmail.com:pass2\``,
+    { parse_mode: 'Markdown' },
+  );
+});
+
+// Delete product — select product
+bot.action('adm_dp_del', async (ctx) => {
+  await ctx.answerCbQuery();
+  if (!digitalProducts.size) { await ctx.reply('📭 No products yet.'); return; }
+  const buttons = [...digitalProducts.values()].map(p => [
+    Markup.button.callback(`🗑️ ${p.name}`, `adm_dp_delconfirm_${p.id}`),
+  ]);
+  await ctx.reply('🗑️ Select product to delete:', Markup.inlineKeyboard(buttons));
+});
+
+bot.action(/^adm_dp_delconfirm_(.+)$/, async (ctx) => {
+  const productId = ctx.match[1];
+  await ctx.answerCbQuery();
+  const product = digitalProducts.get(productId);
+  if (!product) { await ctx.reply('❌ Not found.'); return; }
+  await ctx.reply(
+    `🗑️ Delete *${product.name}*?\n\n⚠️ ${product.stock.length} stock items will be lost.`,
+    {
+      parse_mode: 'Markdown',
+      ...Markup.inlineKeyboard([[
+        Markup.button.callback('✅ Yes, Delete', `adm_dp_dodel_${productId}`),
+        Markup.button.callback('❌ Cancel', 'adm_dp_list'),
+      ]]),
+    },
+  );
+});
+
+bot.action(/^adm_dp_dodel_(.+)$/, async (ctx) => {
+  const productId = ctx.match[1];
+  await ctx.answerCbQuery();
+  const product = digitalProducts.get(productId);
+  if (product) { digitalProducts.delete(productId); await ctx.reply(`✅ *${product.name}* deleted.`, { parse_mode: 'Markdown' }); }
+  else { await ctx.reply('❌ Not found.'); }
+});
+
+// ════════════════════════════════════════════════════════════════
 // /admin — Pending recharge requests (Telegram-ID gated)
 // ════════════════════════════════════════════════════════════════
 const ADMIN_TG_IDS = (process.env.ADMIN_TELEGRAM_IDS ?? '')
@@ -1684,8 +1949,9 @@ bot.on('text', async (ctx) => {
   // Keyboard shortcuts (labels are language-aware)
   if (session && !state) {
     const lang = getLang(chatId);
-    if (text === t(lang, 'btn_balance'))  return showBalance(ctx, session);
-    if (text === t(lang, 'btn_deposit'))  return showDeposit(ctx);
+    if (text === t(lang, 'btn_balance'))       return showBalance(ctx, session);
+    if (text === t(lang, 'btn_deposit'))       return showDeposit(ctx);
+    if (text === t(lang, 'btn_digital_store')) return showDigitalStore(ctx);
     if (text === t(lang, 'btn_orders'))   return showOrders(ctx, session);
     if (text === t(lang, 'btn_buy'))      return showCountries(ctx);
     if (text === t(lang, 'btn_esim'))     return showEsimProducts(ctx, session);
@@ -1702,6 +1968,7 @@ bot.on('text', async (ctx) => {
           [Markup.button.callback('📢 Broadcast',      'adm_broadcast')],
           [Markup.button.callback('💳 SMSPool Balance','adm_smsbal')],
           [Markup.button.callback('📡 eSIM Manager',   'adm_esim')],
+          [Markup.button.callback('🛒 Digital Manager','adm_digital')],
         ]),
       });
       return;
@@ -2045,6 +2312,48 @@ bot.on('text', async (ctx) => {
     pending.delete(chatId);
     if (!session) { await ctx.reply('❌ Please login first.'); return; }
     await processDeposit(ctx, session, amount);
+    return;
+  }
+
+  // ── DIGITAL STORE ADMIN: Product name ──
+  if (state.state === 'adm_dp_name') {
+    data.name = text.trim();
+    pending.set(chatId, { state: 'adm_dp_desc', data });
+    await ctx.reply('📝 Short description? (optional — press /skip to leave blank)', { parse_mode: 'Markdown' });
+    return;
+  }
+  if (state.state === 'adm_dp_desc') {
+    data.description = text === '/skip' ? '' : text.trim();
+    pending.set(chatId, { state: 'adm_dp_price', data });
+    await ctx.reply('💰 Price in credits?\n_Example: 500 = $5_', { parse_mode: 'Markdown' });
+    return;
+  }
+  if (state.state === 'adm_dp_price') {
+    const price = parseInt(text);
+    if (isNaN(price) || price <= 0) { await ctx.reply('❌ Enter a valid number (e.g. 500):'); return; }
+    pending.delete(chatId);
+    const id = `dp_${Date.now()}`;
+    digitalProducts.set(id, { id, category: data.category, name: data.name, description: data.description, price, stock: [] });
+    await ctx.reply(
+      `✅ *Product Created!*\n\n${data.name}\nCategory: ${data.category}\nPrice: *${price} credits*\n\nNow add stock via 🛒 Digital Manager → 📦 Add Stock`,
+      { parse_mode: 'Markdown' },
+    );
+    return;
+  }
+
+  // ── DIGITAL STORE ADMIN: Add stock (credentials) ──
+  if (state.state === 'adm_dp_creds') {
+    pending.delete(chatId);
+    const product = digitalProducts.get(data.productId);
+    if (!product) { await ctx.reply('❌ Product not found.'); return; }
+    const lines = text.split('\n').map(l => l.trim()).filter(Boolean);
+    for (const creds of lines) {
+      product.stock.push({ id: `di_${Date.now()}_${Math.random().toString(36).slice(2)}`, credentials: creds });
+    }
+    await ctx.reply(
+      `✅ *${lines.length} item(s) added to ${product.name}!*\n📦 Total stock: *${availableStock(product).length}* available`,
+      { parse_mode: 'Markdown' },
+    );
     return;
   }
 
