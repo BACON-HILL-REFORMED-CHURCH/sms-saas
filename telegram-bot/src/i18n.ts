@@ -50,6 +50,11 @@ const translations: Record<Lang, Record<string, string>> = {
       'Choose deposit amount:',
     recharge_select_method:
       '💳 *Recharge Request*\n\nSelect your payment method:',
+    payment_details_binance: '💛 *Send payment to this Binance ID:*\n\n`{id}`\n\n📌 After sending, enter the amount in USD you sent (e.g. 10):',
+    payment_details_usdt:    '💚 *Send USDT (TRC20) to this address:*\n\n`{address}`\n\n📌 After sending, enter the amount in USD you sent (e.g. 10):',
+    payment_details_iban:    '🏦 *Transfer to this IBAN:*\n\n`{iban}`\n\n📌 After sending, enter the amount in USD you sent (e.g. 10):',
+    payment_details_cih:     '🏧 *Transfer to this CIH Bank account:*\n\n`{account}`\n\n📌 After sending, enter the amount in USD you sent (e.g. 10):',
+    payment_details_missing: '⚠️ Payment details not configured. Contact admin.',
     recharge_method_chosen: '✅ Method: *{method}*\n\nEnter the amount in USD (e.g. 10):',
     recharge_amount_chosen: '✅ Amount: *${amount}*\n\nEnter your transaction ID or reference number:',
     recharge_submitted:
@@ -136,6 +141,11 @@ const translations: Record<Lang, Record<string, string>> = {
       '📊 السعر: $1 = {rate} كريديت\n\n' +
       'اختر مبلغ الإيداع:',
     recharge_select_method: '💳 *طلب شحن*\n\nاختر طريقة الدفع:',
+    payment_details_binance: '💛 *أرسل الدفعة إلى Binance ID هذا:*\n\n`{id}`\n\n📌 بعد الإرسال، أدخل المبلغ بالدولار (مثال: 10):',
+    payment_details_usdt:    '💚 *أرسل USDT (TRC20) إلى هذا العنوان:*\n\n`{address}`\n\n📌 بعد الإرسال، أدخل المبلغ بالدولار (مثال: 10):',
+    payment_details_iban:    '🏦 *حوّل إلى هذا الـ IBAN:*\n\n`{iban}`\n\n📌 بعد التحويل، أدخل المبلغ بالدولار (مثال: 10):',
+    payment_details_cih:     '🏧 *حوّل إلى حساب CIH Bank هذا:*\n\n`{account}`\n\n📌 بعد التحويل، أدخل المبلغ بالدولار (مثال: 10):',
+    payment_details_missing: '⚠️ تفاصيل الدفع غير مكوّنة. تواصل مع الإدارة.',
     recharge_method_chosen: '✅ الطريقة: *{method}*\n\nأدخل المبلغ بالدولار (مثال: 10):',
     recharge_amount_chosen: '✅ المبلغ: *${amount}*\n\nأدخل رقم المعاملة أو المرجع:',
     recharge_submitted:
@@ -216,6 +226,11 @@ const translations: Record<Lang, Record<string, string>> = {
       '📊 Taux: $1 = {rate} crédits\n\n' +
       'Choisissez le montant:',
     recharge_select_method: '💳 *Demande de Recharge*\n\nChoisissez votre méthode de paiement:',
+    payment_details_binance: '💛 *Envoyez le paiement à ce Binance ID:*\n\n`{id}`\n\n📌 Après envoi, entrez le montant en USD (ex: 10):',
+    payment_details_usdt:    '💚 *Envoyez USDT (TRC20) à cette adresse:*\n\n`{address}`\n\n📌 Après envoi, entrez le montant en USD (ex: 10):',
+    payment_details_iban:    '🏦 *Transférez à cet IBAN:*\n\n`{iban}`\n\n📌 Après envoi, entrez le montant en USD (ex: 10):',
+    payment_details_cih:     '🏧 *Transférez à ce compte CIH Bank:*\n\n`{account}`\n\n📌 Après envoi, entrez le montant en USD (ex: 10):',
+    payment_details_missing: '⚠️ Coordonnées de paiement non configurées. Contactez l\'admin.',
     recharge_method_chosen: '✅ Méthode: *{method}*\n\nEntrez le montant en USD (ex: 10):',
     recharge_amount_chosen: '✅ Montant: *${amount}*\n\nEntrez votre ID de transaction ou référence:',
     recharge_submitted:
@@ -296,6 +311,11 @@ const translations: Record<Lang, Record<string, string>> = {
       '📊 Kurs: $1 = {rate} kredit\n\n' +
       'Pilih jumlah deposit:',
     recharge_select_method: '💳 *Permintaan Isi Ulang*\n\nPilih metode pembayaran:',
+    payment_details_binance: '💛 *Kirim pembayaran ke Binance ID ini:*\n\n`{id}`\n\n📌 Setelah mengirim, masukkan jumlah USD yang dikirim (contoh: 10):',
+    payment_details_usdt:    '💚 *Kirim USDT (TRC20) ke alamat ini:*\n\n`{address}`\n\n📌 Setelah mengirim, masukkan jumlah USD yang dikirim (contoh: 10):',
+    payment_details_iban:    '🏦 *Transfer ke IBAN ini:*\n\n`{iban}`\n\n📌 Setelah mengirim, masukkan jumlah USD yang dikirim (contoh: 10):',
+    payment_details_cih:     '🏧 *Transfer ke rekening CIH Bank ini:*\n\n`{account}`\n\n📌 Setelah mengirim, masukkan jumlah USD yang dikirim (contoh: 10):',
+    payment_details_missing: '⚠️ Detail pembayaran belum dikonfigurasi. Hubungi admin.',
     recharge_method_chosen: '✅ Metode: *{method}*\n\nMasukkan jumlah dalam USD (contoh: 10):',
     recharge_amount_chosen: '✅ Jumlah: *${amount}*\n\nMasukkan ID transaksi atau nomor referensi:',
     recharge_submitted:

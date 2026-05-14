@@ -1950,10 +1950,34 @@ bot.on('text', async (ctx) => {
     const method = methodMap[text];
     if (!method) { await ctx.reply(t(lang, 'recharge_select_prompt')); return; }
     pending.set(chatId, { state: 'recharge_amount', data: { method } });
-    await ctx.reply(
-      t(lang, 'recharge_method_chosen', { method: text }),
-      { parse_mode: 'Markdown', ...Markup.keyboard([[t(lang, 'btn_cancel')]]).resize() }
-    );
+
+    // Show the payment details for the chosen method
+    const cancelKb = Markup.keyboard([[t(lang, 'btn_cancel')]]).resize();
+    const binanceId    = process.env.PAYMENT_BINANCE_ID    ?? '';
+    const usdtAddress  = process.env.PAYMENT_USDT_ADDRESS  ?? '';
+    const iban         = process.env.PAYMENT_IBAN          ?? '';
+    const cihBank      = process.env.PAYMENT_CIH_BANK      ?? '';
+
+    let detailsMsg = '';
+    if (method === 'BINANCE') {
+      detailsMsg = binanceId
+        ? t(lang, 'payment_details_binance', { id: binanceId })
+        : t(lang, 'payment_details_missing');
+    } else if (method === 'USDT') {
+      detailsMsg = usdtAddress
+        ? t(lang, 'payment_details_usdt', { address: usdtAddress })
+        : t(lang, 'payment_details_missing');
+    } else if (method === 'IBAN') {
+      detailsMsg = iban
+        ? t(lang, 'payment_details_iban', { iban })
+        : t(lang, 'payment_details_missing');
+    } else if (method === 'CIH') {
+      detailsMsg = cihBank
+        ? t(lang, 'payment_details_cih', { account: cihBank })
+        : t(lang, 'payment_details_missing');
+    }
+
+    await ctx.reply(detailsMsg, { parse_mode: 'Markdown', ...cancelKb });
     return;
   }
 
