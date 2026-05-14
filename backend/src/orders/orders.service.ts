@@ -23,6 +23,7 @@ import { WalletService } from '../wallet/wallet.service';
 import { SmsQueueService } from '../queue/sms.queue';
 import { RedisService } from '../redis/redis.service';
 import { CreateOrderDto } from './dto/create-order.dto';
+import { AbuseService } from '../abuse/abuse.service';
 
 // Margin added on top of provider price (loaded from DB/config in production)
 const DEFAULT_MARGIN_PERCENT = 30;
@@ -40,11 +41,15 @@ export class OrdersService {
     private readonly wallet: WalletService,
     private readonly smsQueue: SmsQueueService,
     private readonly redis: RedisService,
+    private readonly abuse: AbuseService,
   ) {}
 
   // ── Create order ──────────────────────────────────────────
 
   async createOrder(userId: string, dto: CreateOrderDto) {
+    // 0. Abuse prevention — dedup, pending limit, hourly velocity
+    await this.abuse.checkOrderCreation(userId, dto.service, dto.country);
+
     // 1. Get a number — circuit-broken, with automatic fallback when auto-selecting
     const { provider, number: providerNumber } = dto.provider
       ? await this.registry.getNumberFrom(dto.provider, dto.service, dto.country)

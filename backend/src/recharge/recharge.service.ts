@@ -10,6 +10,7 @@ import axios from 'axios';
 import { PrismaService } from '../prisma/prisma.service';
 import { WalletService } from '../wallet/wallet.service';
 import { RedisService } from '../redis/redis.service';
+import { AbuseService } from '../abuse/abuse.service';
 import { CreateRechargeDto, ReviewRechargeDto } from './recharge.dto';
 import { TransactionType } from '@prisma/client';
 
@@ -24,6 +25,7 @@ export class RechargeService {
     private readonly prisma: PrismaService,
     private readonly wallet: WalletService,
     private readonly redis: RedisService,
+    private readonly abuse: AbuseService,
     private readonly config: ConfigService,
   ) {
     this.botToken = config.get<string>('TELEGRAM_BOT_TOKEN', '');
@@ -32,6 +34,8 @@ export class RechargeService {
   // ── Create ─────────────────────────────────────────────────────
 
   async createRequest(userId: string, dto: CreateRechargeDto) {
+    await this.abuse.checkRechargeRequest(userId);
+
     if (dto.txid) {
       const dup = await this.prisma.rechargeRequest.findUnique({ where: { txid: dto.txid } });
       if (dup) throw new BadRequestException('Transaction ID already used');

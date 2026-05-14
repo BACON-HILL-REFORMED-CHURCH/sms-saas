@@ -21,6 +21,8 @@ import { CreateOrderDto } from './dto/create-order.dto';
 import { JwtAuthGuard } from '../auth/guards/jwt-auth.guard';
 import { CurrentUser } from '../auth/decorators/current-user.decorator';
 import { JwtPayload } from '../auth/strategies/jwt.strategy';
+import { UserRateLimitGuard } from '../common/guards/user-rate-limit.guard';
+import { UserRateLimit } from '../common/decorators/user-rate-limit.decorator';
 
 @Controller('orders')
 @UseGuards(JwtAuthGuard)
@@ -29,10 +31,12 @@ export class OrdersController {
 
   /**
    * POST /api/v1/orders
-   * Create a new SMS activation order
+   * Create a new SMS activation order — rate limited to 10 req/60s per user
    * Body: { service, country, provider? }
    */
   @Post()
+  @UseGuards(UserRateLimitGuard)
+  @UserRateLimit(10, 60)
   createOrder(
     @CurrentUser() user: JwtPayload,
     @Body() dto: CreateOrderDto,
