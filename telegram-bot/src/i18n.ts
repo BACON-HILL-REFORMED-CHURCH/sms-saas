@@ -27,6 +27,20 @@ const translations: Record<Lang, Record<string, string>> = {
     login_error:       '❌ {msg}\n\nTry again: /start',
     register_error:    '❌ {msg}\n\nTry again: /start',
 
+    // ── Support ──
+    btn_support: '🎧 Support',
+    support_msg:
+      '👋 Welcome to *{shop}*!\n\n' +
+      '⚠️ *Store Rules — Read Before Buying!*\n\n' +
+      '1️⃣ *Login Warranty* — Every account is tested and working at the time of purchase. ' +
+      'Check within 10–30 minutes after buying.\n\n' +
+      '2️⃣ *Stay Safe* — Use a proxy or antidetect browser to avoid detection.\n\n' +
+      '3️⃣ *Not Responsible* — We are not responsible for actions taken after purchase.\n\n' +
+      '❤️ *Follow the rules and enjoy your purchase!*\n\n' +
+      '📩 Any questions? Contact us below.',
+    support_btn_contact: '💬 Write to Support',
+    support_no_contact:  '📩 Contact admin for support.',
+
     // ── Digital Store ──
     btn_digital_store:    '🛒 Digital Store',
     digital_store_title:  '🛒 *Digital Store*\n\nChoose a category:',
@@ -156,6 +170,20 @@ const translations: Record<Lang, Record<string, string>> = {
     btn_logout:   '🚪 تسجيل الخروج',
     btn_cancel:   '❌ إلغاء',
 
+    // ── Support ──
+    btn_support: '🎧 الدعم',
+    support_msg:
+      '👋 مرحبًا بك في *{shop}*!\n\n' +
+      '⚠️ *قواعد المتجر — اقرأ قبل الشراء!*\n\n' +
+      '1️⃣ *ضمان تسجيل الدخول* — كل حساب مُختبر ويعمل عند الشراء. ' +
+      'تحقق خلال 10–30 دقيقة بعد الشراء.\n\n' +
+      '2️⃣ *ابقَ آمنًا* — استخدم بروكسي أو متصفح مضاد للكشف.\n\n' +
+      '3️⃣ *غير مسؤولين* — نحن غير مسؤولين عن أي إجراءات بعد الشراء.\n\n' +
+      '❤️ *اتبع القواعد واستمتع بشرائك!*\n\n' +
+      '📩 أي أسئلة؟ تواصل معنا أدناه.',
+    support_btn_contact: '💬 تواصل مع الدعم',
+    support_no_contact:  '📩 تواصل مع الإدارة للحصول على الدعم.',
+
     // ── Digital Store ──
     btn_digital_store:    '🛒 المتجر الرقمي',
     digital_store_title:  '🛒 *المتجر الرقمي*\n\nاختر فئة:',
@@ -256,6 +284,20 @@ const translations: Record<Lang, Record<string, string>> = {
     btn_logout:   '🚪 Déconnexion',
     btn_cancel:   '❌ Annuler',
 
+    // ── Support ──
+    btn_support: '🎧 Support',
+    support_msg:
+      '👋 Bienvenue sur *{shop}*!\n\n' +
+      '⚠️ *Règles du Magasin — Lisez avant d\'acheter!*\n\n' +
+      '1️⃣ *Garantie de Connexion* — Chaque compte est testé et fonctionnel à l\'achat. ' +
+      'Vérifiez dans les 10–30 minutes après l\'achat.\n\n' +
+      '2️⃣ *Restez en Sécurité* — Utilisez un proxy ou navigateur antidetect.\n\n' +
+      '3️⃣ *Non Responsable* — Nous ne sommes pas responsables des actions après achat.\n\n' +
+      '❤️ *Suivez les règles et profitez de votre achat!*\n\n' +
+      '📩 Des questions? Contactez-nous ci-dessous.',
+    support_btn_contact: '💬 Écrire au Support',
+    support_no_contact:  '📩 Contactez l\'admin pour le support.',
+
     // ── Digital Store ──
     btn_digital_store:    '🛒 Boutique Digitale',
     digital_store_title:  '🛒 *Boutique Digitale*\n\nChoisissez une catégorie:',
@@ -355,6 +397,20 @@ const translations: Record<Lang, Record<string, string>> = {
     btn_admin:    '⚙️ Admin Panel',
     btn_logout:   '🚪 Keluar',
     btn_cancel:   '❌ Batal',
+
+    // ── Support ──
+    btn_support: '🎧 Dukungan',
+    support_msg:
+      '👋 Selamat datang di *{shop}*!\n\n' +
+      '⚠️ *Aturan Toko — Baca Sebelum Membeli!*\n\n' +
+      '1️⃣ *Garansi Login* — Setiap akun telah diuji dan berfungsi saat pembelian. ' +
+      'Periksa dalam 10–30 menit setelah membeli.\n\n' +
+      '2️⃣ *Tetap Aman* — Gunakan proxy atau browser antidetect.\n\n' +
+      '3️⃣ *Tidak Bertanggung Jawab* — Kami tidak bertanggung jawab atas tindakan setelah pembelian.\n\n' +
+      '❤️ *Ikuti aturan dan nikmati pembelian Anda!*\n\n' +
+      '📩 Ada pertanyaan? Hubungi kami di bawah.',
+    support_btn_contact: '💬 Tulis ke Dukungan',
+    support_no_contact:  '📩 Hubungi admin untuk dukungan.',
 
     // ── Digital Store ──
     btn_digital_store:    '🛒 Toko Digital',

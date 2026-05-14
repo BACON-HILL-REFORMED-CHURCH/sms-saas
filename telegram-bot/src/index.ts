@@ -23,6 +23,8 @@ const POLL_INTERVAL      = 30_000;
 const POLL_MAX           = 20;
 const CRYPTOMUS_MERCHANT = process.env.CRYPTOMUS_MERCHANT_ID ?? '';
 const CRYPTOMUS_KEY      = process.env.CRYPTOMUS_API_KEY ?? '';
+const SUPPORT_USERNAME   = process.env.SUPPORT_USERNAME ?? '';
+const SHOP_NAME          = process.env.SHOP_NAME ?? 'SMS Shop';
 
 if (!BOT_TOKEN) throw new Error('TELEGRAM_BOT_TOKEN is required');
 console.log(`🤖 API: ${API_URL} | SMSPool: ${SMSPOOL_KEY ? '✅' : '❌'} | Cryptomus: ${CRYPTOMUS_MERCHANT ? '✅' : '❌'}`);
@@ -299,8 +301,8 @@ function getKeyboard(chatId: number, role: string) {
     [t(lang, 'btn_balance'),       t(lang, 'btn_deposit')],
     [t(lang, 'btn_buy'),           t(lang, 'btn_esim')],
     [t(lang, 'btn_digital_store'), t(lang, 'btn_orders')],
-    [t(lang, 'btn_coupon'),        t(lang, 'btn_referral')],
-    [role === 'ADMIN' ? t(lang, 'btn_admin') : t(lang, 'btn_logout')],
+    [t(lang, 'btn_coupon'),        t(lang, 'btn_support')],
+    [t(lang, 'btn_referral'),      role === 'ADMIN' ? t(lang, 'btn_admin') : t(lang, 'btn_logout')],
   ];
 
   if (role === 'ADMIN') rows.push([t(lang, 'btn_logout')]);
@@ -1586,6 +1588,22 @@ bot.action('adm_broadcast', async (ctx) => {
 // ════════════════════════════════════════════════════════════════
 // DIGITAL STORE — User flow
 // ════════════════════════════════════════════════════════════════
+async function showSupport(ctx: any) {
+  const chatId = ctx.chat?.id;
+  const lang   = getLang(chatId);
+  const msg    = t(lang, 'support_msg', { shop: SHOP_NAME });
+  if (SUPPORT_USERNAME) {
+    await ctx.reply(msg, {
+      parse_mode: 'Markdown',
+      ...Markup.inlineKeyboard([[
+        Markup.button.url(t(lang, 'support_btn_contact'), `https://t.me/${SUPPORT_USERNAME.replace('@', '')}`),
+      ]]),
+    });
+  } else {
+    await ctx.reply(msg + '\n\n' + t(lang, 'support_no_contact'), { parse_mode: 'Markdown' });
+  }
+}
+
 async function showDigitalStore(ctx: any) {
   const chatId = ctx.chat?.id;
   const lang   = getLang(chatId);
@@ -1727,6 +1745,7 @@ bot.action('adm_digital', async (ctx) => {
         [Markup.button.callback('📋 List All Products', 'adm_dp_list')],
         [Markup.button.callback('➕ Add Product',       'adm_dp_add')],
         [Markup.button.callback('📦 Add Stock',         'adm_dp_stock')],
+        [Markup.button.callback('✏️ Edit Product',      'adm_dp_edit')],
         [Markup.button.callback('🗑️ Delete Product',    'adm_dp_del')],
       ]),
     },
@@ -1828,6 +1847,58 @@ bot.action(/^adm_dp_dodel_(.+)$/, async (ctx) => {
   const product = digitalProducts.get(productId);
   if (product) { digitalProducts.delete(productId); await ctx.reply(`✅ *${product.name}* deleted.`, { parse_mode: 'Markdown' }); }
   else { await ctx.reply('❌ Not found.'); }
+});
+
+// Edit product — select product
+bot.action('adm_dp_edit', async (ctx) => {
+  await ctx.answerCbQuery();
+  if (!digitalProducts.size) { await ctx.reply('📭 No products yet.'); return; }
+  const buttons = [...digitalProducts.values()].map(p => [
+    Markup.button.callback(`✏️ ${p.name} (${p.price} cr)`, `adm_dp_editsel_${p.id}`),
+  ]);
+  await ctx.reply('✏️ Select product to edit:', Markup.inlineKeyboard(buttons));
+});
+
+bot.action(/^adm_dp_editsel_(.+)$/, async (ctx) => {
+  const productId = ctx.match[1];
+  await ctx.answerCbQuery();
+  const product = digitalProducts.get(productId);
+  if (!product) { await ctx.reply('❌ Not found.'); return; }
+  await ctx.reply(
+    `✏️ *Edit: ${product.name}*\n\nCurrent:\n• Name: ${product.name}\n• Price: ${product.price} cr\n• Desc: ${product.description || '—'}`,
+    {
+      parse_mode: 'Markdown',
+      ...Markup.inlineKeyboard([
+        [Markup.button.callback('📝 Edit Name',        `adm_dp_ename_${productId}`)],
+        [Markup.button.callback('💰 Edit Price',       `adm_dp_eprice_${productId}`)],
+        [Markup.button.callback('📄 Edit Description', `adm_dp_edesc_${productId}`)],
+      ]),
+    },
+  );
+});
+
+bot.action(/^adm_dp_ename_(.+)$/, async (ctx) => {
+  const productId = ctx.match[1];
+  const chatId = ctx.chat!.id;
+  await ctx.answerCbQuery();
+  pending.set(chatId, { state: 'adm_dp_edit_name', data: { productId } });
+  await ctx.reply('📝 Enter new name:');
+});
+
+bot.action(/^adm_dp_eprice_(.+)$/, async (ctx) => {
+  const productId = ctx.match[1];
+  const chatId = ctx.chat!.id;
+  await ctx.answerCbQuery();
+  pending.set(chatId, { state: 'adm_dp_edit_price', data: { productId } });
+  await ctx.reply('💰 Enter new price in credits (e.g. 500):');
+});
+
+bot.action(/^adm_dp_edesc_(.+)$/, async (ctx) => {
+  const productId = ctx.match[1];
+  const chatId = ctx.chat!.id;
+  await ctx.answerCbQuery();
+  pending.set(chatId, { state: 'adm_dp_edit_desc', data: { productId } });
+  await ctx.reply('📄 Enter new description (or /skip to clear):');
 });
 
 // ════════════════════════════════════════════════════════════════
@@ -1952,6 +2023,7 @@ bot.on('text', async (ctx) => {
     if (text === t(lang, 'btn_balance'))       return showBalance(ctx, session);
     if (text === t(lang, 'btn_deposit'))       return showDeposit(ctx);
     if (text === t(lang, 'btn_digital_store')) return showDigitalStore(ctx);
+    if (text === t(lang, 'btn_support'))       return showSupport(ctx);
     if (text === t(lang, 'btn_orders'))   return showOrders(ctx, session);
     if (text === t(lang, 'btn_buy'))      return showCountries(ctx);
     if (text === t(lang, 'btn_esim'))     return showEsimProducts(ctx, session);
@@ -2338,6 +2410,36 @@ bot.on('text', async (ctx) => {
       `✅ *Product Created!*\n\n${data.name}\nCategory: ${data.category}\nPrice: *${price} credits*\n\nNow add stock via 🛒 Digital Manager → 📦 Add Stock`,
       { parse_mode: 'Markdown' },
     );
+    return;
+  }
+
+  // ── DIGITAL STORE ADMIN: Edit product ──
+  if (state.state === 'adm_dp_edit_name') {
+    pending.delete(chatId);
+    const product = digitalProducts.get(data.productId);
+    if (!product) { await ctx.reply('❌ Product not found.'); return; }
+    const oldName  = product.name;
+    product.name   = text.trim();
+    await ctx.reply(`✅ Name updated: *${oldName}* → *${product.name}*`, { parse_mode: 'Markdown' });
+    return;
+  }
+  if (state.state === 'adm_dp_edit_price') {
+    const price = parseInt(text);
+    if (isNaN(price) || price <= 0) { await ctx.reply('❌ Enter a valid number (e.g. 500):'); return; }
+    pending.delete(chatId);
+    const product = digitalProducts.get(data.productId);
+    if (!product) { await ctx.reply('❌ Product not found.'); return; }
+    const oldPrice  = product.price;
+    product.price   = price;
+    await ctx.reply(`✅ Price updated: *${oldPrice} cr* → *${price} cr*`, { parse_mode: 'Markdown' });
+    return;
+  }
+  if (state.state === 'adm_dp_edit_desc') {
+    pending.delete(chatId);
+    const product = digitalProducts.get(data.productId);
+    if (!product) { await ctx.reply('❌ Product not found.'); return; }
+    product.description = text === '/skip' ? '' : text.trim();
+    await ctx.reply(`✅ Description updated for *${product.name}*`, { parse_mode: 'Markdown' });
     return;
   }
 
