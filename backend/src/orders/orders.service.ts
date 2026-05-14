@@ -21,6 +21,7 @@ import { PrismaService } from '../prisma/prisma.service';
 import { ProviderRegistryService } from '../providers/provider-registry.service';
 import { WalletService } from '../wallet/wallet.service';
 import { SmsQueueService } from '../queue/sms.queue';
+import { RedisService } from '../redis/redis.service';
 import { CreateOrderDto } from './dto/create-order.dto';
 
 // Margin added on top of provider price (loaded from DB/config in production)
@@ -38,6 +39,7 @@ export class OrdersService {
     private readonly registry: ProviderRegistryService,
     private readonly wallet: WalletService,
     private readonly smsQueue: SmsQueueService,
+    private readonly redis: RedisService,
   ) {}
 
   // ── Create order ──────────────────────────────────────────
@@ -137,40 +139,42 @@ export class OrdersService {
   // ── Cancel order ──────────────────────────────────────────
 
   async cancelOrder(userId: string, orderId: string) {
-    const order = await this.prisma.order.findUnique({ where: { id: orderId } });
+    return this.redis.withLock(`order:${orderId}`, 30, async () => {
+      const order = await this.prisma.order.findUnique({ where: { id: orderId } });
 
-    if (!order) throw new NotFoundException('Order not found');
-    if (order.userId !== userId) throw new BadRequestException('Not your order');
-    if (order.status !== OrderStatus.PENDING) {
-      throw new BadRequestException(`Cannot cancel order with status: ${order.status}`);
-    }
+      if (!order) throw new NotFoundException('Order not found');
+      if (order.userId !== userId) throw new BadRequestException('Not your order');
+      if (order.status !== OrderStatus.PENDING) {
+        throw new BadRequestException(`Cannot cancel order with status: ${order.status}`);
+      }
 
-    // Cancel on provider side
-    const provider = this.registry.get(order.provider);
-    try {
-      await provider.cancel(order.externalId);
-    } catch (err) {
-      this.logger.warn(`Provider cancel failed for ${orderId}: ${err.message}`);
-    }
+      // Cancel on provider side
+      const provider = this.registry.get(order.provider);
+      try {
+        await provider.cancel(order.externalId);
+      } catch (err) {
+        this.logger.warn(`Provider cancel failed for ${orderId}: ${err.message}`);
+      }
 
-    // Update order status
-    await this.prisma.order.update({
-      where: { id: orderId },
-      data: { status: OrderStatus.CANCELED },
+      // Update order status
+      await this.prisma.order.update({
+        where: { id: orderId },
+        data: { status: OrderStatus.CANCELED },
+      });
+
+      // Refund user
+      await this.wallet.atomicCredit(
+        userId,
+        order.price,
+        TransactionType.REFUND,
+        `Refund — canceled order (${order.service} ${order.phoneNumber})`,
+        orderId,
+      );
+
+      this.logger.log(`Order ${orderId} canceled + refunded ${order.price}¢ to user ${userId}`);
+
+      return { message: 'Order canceled and refunded successfully' };
     });
-
-    // Refund user
-    await this.wallet.atomicCredit(
-      userId,
-      order.price,
-      TransactionType.REFUND,
-      `Refund — canceled order (${order.service} ${order.phoneNumber})`,
-      orderId,
-    );
-
-    this.logger.log(`Order ${orderId} canceled + refunded ${order.price}¢ to user ${userId}`);
-
-    return { message: 'Order canceled and refunded successfully' };
   }
 
   // ── Get single order ──────────────────────────────────────

@@ -13,13 +13,17 @@ import {
 } from '@nestjs/common';
 import { TransactionType } from '@prisma/client';
 import { PrismaService } from '../prisma/prisma.service';
+import { RedisService } from '../redis/redis.service';
 import { DepositDto, DepositMethod, AdminAdjustDto } from './dto/wallet.dto';
 
 @Injectable()
 export class WalletService {
   private readonly logger = new Logger(WalletService.name);
 
-  constructor(private readonly prisma: PrismaService) {}
+  constructor(
+    private readonly prisma: PrismaService,
+    private readonly redis: RedisService,
+  ) {}
 
   // ── Get balance ───────────────────────────────────────────
 
@@ -101,7 +105,7 @@ export class WalletService {
     description: string,
     orderId?: string,
   ) {
-    return this.prisma.$transaction(async (tx) => {
+    return this.redis.withLock(`wallet:${userId}`, 10, () => this.prisma.$transaction(async (tx) => {
       // Lock + fetch current balance
       const user = await tx.user.findUniqueOrThrow({
         where: { id: userId },
@@ -135,7 +139,7 @@ export class WalletService {
       });
 
       return { transaction, newBalance };
-    });
+    }));
   }
 
   /**
@@ -148,7 +152,7 @@ export class WalletService {
     description: string,
     orderId?: string,
   ) {
-    return this.prisma.$transaction(async (tx) => {
+    return this.redis.withLock(`wallet:${userId}`, 10, () => this.prisma.$transaction(async (tx) => {
       const user = await tx.user.findUniqueOrThrow({
         where: { id: userId },
         select: { id: true, balance: true },
@@ -173,7 +177,7 @@ export class WalletService {
       });
 
       return { transaction, newBalance };
-    });
+    }));
   }
 
   /**
