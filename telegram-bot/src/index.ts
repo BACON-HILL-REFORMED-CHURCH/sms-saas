@@ -11,6 +11,11 @@ import express from 'express';
 import path from 'path';
 import fs from 'fs';
 import { t } from './i18n';
+import {
+  loadState, saveUserLang, saveDigitalProducts, saveCoupons,
+  saveReferrals, saveUserOrders, saveBannedUsers,
+  saveScheduledBroadcast, saveFlashSale,
+} from './store';
 
 // ── Config ────────────────────────────────────────────────────
 const BOT_TOKEN          = process.env.TELEGRAM_BOT_TOKEN!;
@@ -57,17 +62,19 @@ interface DigitalProduct { id: string; category: string; name: string; descripti
 
 // ── Storage ───────────────────────────────────────────────────
 const sessions    = new Map<number, UserSession>();
-const userLang    = new Map<number, string>();        // chatId → 'en'|'ar'|'fr'|'id'
+let userLang      = new Map<number, string>();
 const pending     = new Map<number, PendingState>();
-const coupons     = new Map<string, Coupon>();
-const referrals   = new Map<number, number>();
-const referred    = new Set<number>();
+let coupons       = new Map<string, Coupon>();
+let referrals     = new Map<number, number>();
+let referred      = new Set<number>();
 const activePolls    = new Map<string, NodeJS.Timeout>();
 const smsOrders      = new Map<string, SMSLocalOrder>();
-const userOrders     = new Map<number, string[]>();
-const paymentPolls   = new Map<string, NodeJS.Timeout>(); // uuid → interval
-const pendingDeposits= new Map<string, { chatId: number; amountUsd: number; credits: number }>(); // uuid → info
-const digitalProducts= new Map<string, DigitalProduct>(); // productId → product
+let userOrders       = new Map<number, string[]>();
+const paymentPolls   = new Map<string, NodeJS.Timeout>();
+const pendingDeposits= new Map<string, { chatId: number; amountUsd: number; credits: number }>();
+let digitalProducts  = new Map<string, DigitalProduct>();
+let bannedUsers      = new Set<number>();
+let flashSale: { percent: number; endsAt: string } | null = null;
 
 let scheduledBroadcast: {
   message: string; photoUrl?: string;
@@ -397,7 +404,7 @@ bot.start(async (ctx) => {
   const payload = ctx.startPayload;
   if (payload?.startsWith('ref_')) {
     const ref = parseInt(payload.replace('ref_', ''));
-    if (ref && ref !== chatId && !referrals.has(chatId)) referrals.set(chatId, ref);
+    if (ref && ref !== chatId && !referrals.has(chatId)) { referrals.set(chatId, ref); saveReferrals(referrals, referred); }
   }
 
   const session = sessions.get(chatId);
@@ -463,6 +470,7 @@ for (const [action, label] of Object.entries(LANG_LABELS)) {
   bot.action(action, async (ctx) => {
     const chatId = ctx.chat!.id;
     userLang.set(chatId, code);
+    saveUserLang(userLang);
     await ctx.answerCbQuery(label);
     await ctx.deleteMessage().catch(() => {});
     await showAuthMenu(ctx);
@@ -868,6 +876,7 @@ bot.action(/^cbuy_(\d+)_(\d+)_(\d+)$/, async (ctx) => {
     smsOrders.set(orderId, order);
     const existing = userOrders.get(chatId) ?? [];
     userOrders.set(chatId, [orderId, ...existing].slice(0, 10));
+    saveUserOrders(userOrders);
 
     // 4. Reply immediately with the number
     await ctx.reply(
@@ -1816,13 +1825,20 @@ bot.action(/^dprod_(.+)$/, async (ctx) => {
   const qty = availableStock(product).length;
   if (qty === 0) { await ctx.reply(t(lang, 'digital_out_of_stock')); return; }
 
+  // Apply flash sale discount
+  const activeFlash = flashSale && new Date(flashSale.endsAt) > new Date() ? flashSale : null;
+  const finalPrice  = activeFlash ? Math.ceil(product.price * (1 - activeFlash.percent / 100)) : product.price;
+  const priceLabel  = activeFlash
+    ? `~~${product.price}~~ *${finalPrice} credits* ⚡ -${activeFlash.percent}%`
+    : `*${finalPrice} credits*`;
+
   try {
     const res     = await makeApi(session.token).get('/wallet/balance');
     const balance = unwrap(res).balance as number;
 
-    if (balance < product.price) {
+    if (balance < finalPrice) {
       await ctx.reply(
-        t(lang, 'digital_no_balance', { price: product.price, balance }),
+        t(lang, 'digital_no_balance', { price: finalPrice, balance }),
         { parse_mode: 'Markdown' },
       );
       return;
@@ -1830,7 +1846,7 @@ bot.action(/^dprod_(.+)$/, async (ctx) => {
 
     const desc = product.description ? `_${product.description}_\n\n` : '';
     await ctx.reply(
-      t(lang, 'digital_confirm', { name: product.name, desc, price: product.price, stock: qty, balance }),
+      t(lang, 'digital_confirm', { name: product.name, desc, price: priceLabel, stock: qty, balance }),
       {
         parse_mode: 'Markdown',
         ...Markup.inlineKeyboard([
@@ -1861,14 +1877,32 @@ bot.action(/^dbuy_(.+)$/, async (ctx) => {
   const item = availableStock(product)[0];
   if (!item) { await ctx.reply(t(lang, 'digital_out_of_stock')); return; }
 
+  const buyFlash  = flashSale && new Date(flashSale.endsAt) > new Date() ? flashSale : null;
+  const buyPrice  = buyFlash ? Math.ceil(product.price * (1 - buyFlash.percent / 100)) : product.price;
+
   try {
     await makeApi(botAdminToken).post('/admin/balance/adjust', {
       userId: session.userId,
-      amount: -product.price,
-      reason: `Digital: ${product.name}`,
+      amount: -buyPrice,
+      reason: `Digital: ${product.name}${buyFlash ? ` (-${buyFlash.percent}% flash)` : ''}`,
     });
     item.soldTo = chatId;
     item.soldAt = new Date();
+    saveDigitalProducts(digitalProducts);
+
+    // Low stock alert
+    const remaining = availableStock(product).length;
+    if (remaining < 3) {
+      const alertIds = adminChatId ? [adminChatId] : ADMIN_TG_IDS;
+      for (const adminId of alertIds) {
+        try {
+          await bot.telegram.sendMessage(adminId,
+            `⚠️ *Low Stock Alert!*\n\n📦 *${product.name}*\nOnly *${remaining}* left in stock.\n\n_Add more via Admin → Digital Manager_`,
+            { parse_mode: 'Markdown' },
+          );
+        } catch {}
+      }
+    }
 
     await ctx.editMessageReplyMarkup({ inline_keyboard: [] }).catch(() => {});
     await ctx.reply(
@@ -1998,7 +2032,7 @@ bot.action(/^adm_dp_dodel_(.+)$/, async (ctx) => {
   const productId = ctx.match[1];
   await ctx.answerCbQuery();
   const product = digitalProducts.get(productId);
-  if (product) { digitalProducts.delete(productId); await ctx.reply(`✅ *${product.name}* deleted.`, { parse_mode: 'Markdown' }); }
+  if (product) { digitalProducts.delete(productId); saveDigitalProducts(digitalProducts); await ctx.reply(`✅ *${product.name}* deleted.`, { parse_mode: 'Markdown' }); }
   else { await ctx.reply('❌ Not found.'); }
 });
 
@@ -2162,11 +2196,69 @@ bot.action(/^rch_reject_(.+)$/, async (ctx) => {
   await ctx.reply(`Enter rejection reason for \`${id}\` (or send "none"):`, { parse_mode: 'Markdown' });
 });
 
+// ── Ban user ──────────────────────────────────────────────────
+bot.action('adm_ban', async (ctx) => {
+  const chatId = ctx.chat!.id;
+  if (!sessions.get(chatId) || sessions.get(chatId)!.role !== 'ADMIN') { await ctx.answerCbQuery(); return; }
+  pending.set(chatId, { state: 'adm_ban_id', data: {} });
+  await ctx.answerCbQuery();
+  await ctx.reply('🚫 *Ban User*\n\nEnter the Telegram Chat ID to ban:', { parse_mode: 'Markdown' });
+});
+
+// ── Targeted broadcast ────────────────────────────────────────
+bot.action('adm_broadcast_target', async (ctx) => {
+  const chatId = ctx.chat!.id;
+  if (!sessions.get(chatId) || sessions.get(chatId)!.role !== 'ADMIN') { await ctx.answerCbQuery(); return; }
+  await ctx.answerCbQuery();
+  await ctx.reply('🎯 *Targeted Broadcast*\n\nChoose language group:', {
+    parse_mode: 'Markdown',
+    ...Markup.inlineKeyboard([
+      [Markup.button.callback('🇬🇧 English only', 'adm_bcast_lang_en'), Markup.button.callback('🇸🇦 Arabic only', 'adm_bcast_lang_ar')],
+      [Markup.button.callback('🇫🇷 French only',  'adm_bcast_lang_fr'), Markup.button.callback('🇮🇩 Indonesian', 'adm_bcast_lang_id')],
+    ]),
+  });
+});
+
+for (const lang of ['en','ar','fr','id']) {
+  bot.action(`adm_bcast_lang_${lang}`, async (ctx) => {
+    const chatId = ctx.chat!.id;
+    pending.set(chatId, { state: 'adm_bcast_target_msg', data: { lang } });
+    await ctx.answerCbQuery();
+    await ctx.reply(`✍️ Write your message to send to *${lang.toUpperCase()}* users:`, { parse_mode: 'Markdown' });
+  });
+}
+
+// ── Flash sale ────────────────────────────────────────────────
+bot.action('adm_flash', async (ctx) => {
+  const chatId = ctx.chat!.id;
+  if (!sessions.get(chatId) || sessions.get(chatId)!.role !== 'ADMIN') { await ctx.answerCbQuery(); return; }
+  await ctx.answerCbQuery();
+  if (flashSale) {
+    const endsAt = new Date(flashSale.endsAt);
+    const left   = Math.max(0, Math.round((endsAt.getTime() - Date.now()) / 60000));
+    await ctx.reply(
+      `⚡ *Active Flash Sale*\n\n🎯 Discount: *${flashSale.percent}%*\n⏳ Ends in: *${left} min*\n\nStop it?`,
+      { parse_mode: 'Markdown', ...Markup.inlineKeyboard([[Markup.button.callback('🛑 Stop Flash Sale', 'adm_flash_stop')]]) },
+    );
+  } else {
+    pending.set(chatId, { state: 'adm_flash_percent', data: {} });
+    await ctx.reply('⚡ *Flash Sale*\n\nDiscount % to apply on all digital products?\n_Example: 20 (for 20% off)_', { parse_mode: 'Markdown' });
+  }
+});
+
+bot.action('adm_flash_stop', async (ctx) => {
+  flashSale = null;
+  saveFlashSale(null);
+  await ctx.answerCbQuery('Flash sale stopped');
+  await ctx.reply('🛑 Flash sale stopped.');
+});
+
 // ════════════════════════════════════════════════════════════════
 // TEXT HANDLER — State machine
 // ════════════════════════════════════════════════════════════════
 bot.on('text', async (ctx) => {
   const chatId  = ctx.chat.id;
+  if (bannedUsers.has(chatId)) return;   // banned
   const text    = ctx.message.text.trim();
   const session = sessions.get(chatId);
   const state   = pending.get(chatId);
@@ -2192,11 +2284,14 @@ bot.on('text', async (ctx) => {
           [Markup.button.callback('👥 Users List',     'adm_users')],
           [Markup.button.callback('💰 Add Balance',    'adm_addbal')],
           [Markup.button.callback('🎟️ Create Coupon',  'adm_coupon')],
-          [Markup.button.callback('📢 Broadcast Now',   'adm_broadcast')],
-          [Markup.button.callback('⏰ Scheduled Post',  'adm_sched')],
-          [Markup.button.callback('💳 SMSPool Balance','adm_smsbal')],
-          [Markup.button.callback('📡 eSIM Manager',   'adm_esim')],
-          [Markup.button.callback('🛒 Digital Manager','adm_digital')],
+          [Markup.button.callback('📢 Broadcast Now',    'adm_broadcast')],
+          [Markup.button.callback('🎯 Targeted Broadcast','adm_broadcast_target')],
+          [Markup.button.callback('⏰ Scheduled Post',   'adm_sched')],
+          [Markup.button.callback('⚡ Flash Sale',        'adm_flash')],
+          [Markup.button.callback('🚫 Ban User',          'adm_ban')],
+          [Markup.button.callback('💳 SMSPool Balance',  'adm_smsbal')],
+          [Markup.button.callback('📡 eSIM Manager',     'adm_esim')],
+          [Markup.button.callback('🛒 Digital Manager',  'adm_digital')],
         ]),
       });
       return;
@@ -2268,6 +2363,7 @@ bot.on('text', async (ctx) => {
               reason: `Referral bonus — ${data.email} registered`,
             });
             referred.add(chatId);
+            saveReferrals(referrals, referred);
             await bot.telegram.sendMessage(referrerId,
               `🎉 *Referral Bonus!*\n\n` +
               `Your friend joined ${SHOP_NAME}!\n` +
@@ -2294,6 +2390,7 @@ bot.on('text', async (ctx) => {
     try {
       await makeApi(botAdminToken).post('/admin/balance/adjust', { userId:session.userId, amount:coupon.amount, reason:`Coupon: ${code}` });
       coupon.usedBy.add(chatId); coupon.usesLeft--;
+      saveCoupons(coupons);
       await ctx.reply(`✅ *Coupon Redeemed!*\n\n🎟️ \`${code}\`\n💰 *+${coupon.amount} credits* added!`, { parse_mode:'Markdown' });
     } catch (err) { await ctx.reply(`❌ ${errMsg(err)}`); }
     return;
@@ -2340,6 +2437,7 @@ bot.on('text', async (ctx) => {
     if (isNaN(maxUses)||maxUses<=0) { await ctx.reply('❌ Enter positive number:'); return; }
     pending.delete(chatId);
     coupons.set(data.code, { amount:parseInt(data.amount), maxUses, usesLeft:maxUses, usedBy:new Set() });
+    saveCoupons(coupons);
     await ctx.reply(`✅ *Coupon Created!*\n\n🎟️ Code: \`${data.code}\`\n💰 Value: *${data.amount} credits*\n🔢 Max uses: *${maxUses}*`, { parse_mode:'Markdown' });
     return;
   }
@@ -2614,6 +2712,7 @@ bot.on('text', async (ctx) => {
     pending.delete(chatId);
     const id = `dp_${Date.now()}`;
     digitalProducts.set(id, { id, category: data.category, name: data.name, description: data.description, price, stock: [] });
+    saveDigitalProducts(digitalProducts);
     await ctx.reply(
       `✅ *Product Created!*\n\n${data.name}\nCategory: ${data.category}\nPrice: *${price} credits*\n\nNow add stock via 🛒 Digital Manager → 📦 Add Stock`,
       { parse_mode: 'Markdown' },
@@ -2628,6 +2727,7 @@ bot.on('text', async (ctx) => {
     if (!product) { await ctx.reply('❌ Product not found.'); return; }
     const oldName  = product.name;
     product.name   = text.trim();
+    saveDigitalProducts(digitalProducts);
     await ctx.reply(`✅ Name updated: *${oldName}* → *${product.name}*`, { parse_mode: 'Markdown' });
     return;
   }
@@ -2639,6 +2739,7 @@ bot.on('text', async (ctx) => {
     if (!product) { await ctx.reply('❌ Product not found.'); return; }
     const oldPrice  = product.price;
     product.price   = price;
+    saveDigitalProducts(digitalProducts);
     await ctx.reply(`✅ Price updated: *${oldPrice} cr* → *${price} cr*`, { parse_mode: 'Markdown' });
     return;
   }
@@ -2647,6 +2748,7 @@ bot.on('text', async (ctx) => {
     const product = digitalProducts.get(data.productId);
     if (!product) { await ctx.reply('❌ Product not found.'); return; }
     product.description = text === '/skip' ? '' : text.trim();
+    saveDigitalProducts(digitalProducts);
     await ctx.reply(`✅ Description updated for *${product.name}*`, { parse_mode: 'Markdown' });
     return;
   }
@@ -2660,6 +2762,7 @@ bot.on('text', async (ctx) => {
     for (const creds of lines) {
       product.stock.push({ id: `di_${Date.now()}_${Math.random().toString(36).slice(2)}`, credentials: creds });
     }
+    saveDigitalProducts(digitalProducts);
     await ctx.reply(
       `✅ *${lines.length} item(s) added to ${product.name}!*\n📦 Total stock: *${availableStock(product).length}* available`,
       { parse_mode: 'Markdown' },
@@ -2702,6 +2805,64 @@ bot.on('text', async (ctx) => {
     return;
   }
 
+  // ── ADMIN: Ban user ──
+  if (state.state === 'adm_ban_id') {
+    pending.delete(chatId);
+    const targetId = parseInt(text.trim());
+    if (isNaN(targetId)) { await ctx.reply('❌ Invalid ID. Must be a number.'); return; }
+    if (bannedUsers.has(targetId)) {
+      bannedUsers.delete(targetId);
+      saveBannedUsers(bannedUsers);
+      await ctx.reply(`✅ User *${targetId}* unbanned.`, { parse_mode: 'Markdown' });
+    } else {
+      bannedUsers.add(targetId);
+      saveBannedUsers(bannedUsers);
+      sessions.delete(targetId);
+      await ctx.reply(`🚫 User *${targetId}* banned. They can no longer use the bot.`, { parse_mode: 'Markdown' });
+      try { await bot.telegram.sendMessage(targetId, '🚫 Your account has been banned. Contact support.'); } catch {}
+    }
+    return;
+  }
+
+  // ── ADMIN: Targeted broadcast ──
+  if (state.state === 'adm_bcast_target_msg') {
+    pending.delete(chatId);
+    const targetLang = data.lang;
+    const targets = [...sessions.keys()].filter(id => userLang.get(id) === targetLang);
+    await ctx.reply(`🎯 Sending to ${targets.length} ${targetLang.toUpperCase()} users...`);
+    let sent = 0, failed = 0;
+    for (const id of targets) {
+      try { await bot.telegram.sendMessage(id, `📢 *Announcement*\n\n${text}`, { parse_mode: 'Markdown' }); sent++; } catch { failed++; }
+    }
+    await ctx.reply(`✅ Done! ✉️ Sent: ${sent} | ❌ Failed: ${failed}`);
+    return;
+  }
+
+  // ── ADMIN: Flash sale ──
+  if (state.state === 'adm_flash_percent') {
+    const percent = parseInt(text);
+    if (isNaN(percent) || percent < 1 || percent > 99) { await ctx.reply('❌ Enter a valid % between 1 and 99:'); return; }
+    data.percent = String(percent);
+    pending.set(chatId, { state: 'adm_flash_hours', data });
+    await ctx.reply(`⏳ Duration in hours? (e.g. 2 = 2 hours):`);
+    return;
+  }
+  if (state.state === 'adm_flash_hours') {
+    const hours = parseFloat(text);
+    if (isNaN(hours) || hours <= 0) { await ctx.reply('❌ Enter valid hours (e.g. 2):'); return; }
+    pending.delete(chatId);
+    const endsAt = new Date(Date.now() + hours * 3_600_000).toISOString();
+    flashSale = { percent: parseInt(data.percent), endsAt };
+    saveFlashSale(flashSale);
+    // Auto-expire
+    setTimeout(() => { flashSale = null; saveFlashSale(null); }, hours * 3_600_000);
+    await ctx.reply(
+      `⚡ *Flash Sale Started!*\n\n🎯 *${data.percent}% discount* on all digital products\n⏳ Duration: *${hours}h*\n\nAll prices are now reduced!`,
+      { parse_mode: 'Markdown' },
+    );
+    return;
+  }
+
   // ── ADMIN: Reject recharge reason ──
   if (state.state === 'adm_rch_reject') {
     pending.delete(chatId);
@@ -2730,12 +2891,67 @@ const BOT_PUBLIC_URL = (process.env.BOT_PUBLIC_URL ?? WEBHOOK_DOMAIN).replace(/\
 const BACKEND_URL    = (process.env.API_URL ?? '').replace(/\/api\/v1\/?$/, '').replace(/\/$/, '');
 
 async function bootstrap() {
+  // Load persisted state from Redis
+  try {
+    const state = await loadState();
+    userLang       = state.userLang;
+    digitalProducts= state.digitalProducts;
+    coupons        = state.coupons;
+    referrals      = state.referrals;
+    referred       = state.referred;
+    userOrders     = state.userOrders;
+    bannedUsers    = state.bannedUsers;
+    flashSale      = state.flashSale;
+
+    // Restart scheduled broadcast timer if one was active
+    if (state.scheduledBroadcast) {
+      const { message, photoUrl, intervalMs } = state.scheduledBroadcast;
+      const timer = setInterval(async () => { await runBroadcast(message, photoUrl); }, intervalMs);
+      scheduledBroadcast = { message, photoUrl, intervalMs, timer };
+      console.log(`⏰ Scheduled broadcast restored (every ${intervalMs / 3_600_000}h)`);
+    }
+
+    // Restore flash sale expiry timeout if still active
+    if (flashSale) {
+      const left = new Date(flashSale.endsAt).getTime() - Date.now();
+      if (left > 0) setTimeout(() => { flashSale = null; saveFlashSale(null); }, left);
+      else { flashSale = null; }
+    }
+
+    console.log(`✅ State loaded: ${userLang.size} langs, ${digitalProducts.size} products, ${coupons.size} coupons, ${bannedUsers.size} banned`);
+  } catch (e) { console.error('⚠️ State load failed:', e); }
+
   // Fetch bot username
   try {
     const me = await bot.telegram.getMe();
     botUsername = me.username ?? botUsername;
     console.log(`🤖 Bot: @${botUsername}`);
   } catch {}
+
+  // Daily revenue report (every 24h)
+  setInterval(async () => {
+    const notifyIds = adminChatId ? [adminChatId] : ADMIN_TG_IDS;
+    if (!notifyIds.length) return;
+    try {
+      const session = adminChatId ? sessions.get(adminChatId) : null;
+      const token   = session?.token ?? botAdminToken;
+      if (!token) return;
+      const res = await makeApi(token).get('/admin/stats');
+      const s   = unwrap(res);
+      for (const id of notifyIds) {
+        try {
+          await bot.telegram.sendMessage(id,
+            `📊 *Daily Report — ${new Date().toLocaleDateString()}*\n\n` +
+            `👥 Total Users: *${s.totalUsers ?? 0}*\n` +
+            `📋 Total Orders: *${s.totalOrders ?? 0}*\n` +
+            `💰 Revenue: *${s.totalRevenue ?? 0} credits* (≈ $${((s.totalRevenue ?? 0) / CREDITS_PER_USD).toFixed(2)} USD)\n` +
+            `🛒 Digital Products: *${digitalProducts.size}*`,
+            { parse_mode: 'Markdown' },
+          );
+        } catch {}
+      }
+    } catch {}
+  }, 24 * 3_600_000);
 
   // Register bot menu commands (the persistent "/" menu in Telegram)
   try {
