@@ -28,6 +28,7 @@
     "bullmq": "^5.76.8",
     "class-transformer": "^0.5.1",
     "class-validator": "^0.14.1",
+    "formdata-node": "^6.0.3",
     "ioredis": "^5.3.2",
     "nest-winston": "^1.9.4",
     "nodemailer": "^6.9.8",
