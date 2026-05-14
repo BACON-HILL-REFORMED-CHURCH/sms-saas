@@ -11,6 +11,7 @@ const translations: Record<Lang, Record<string, string>> = {
       '🎉 *Welcome to SMS Shop!*\n\n' +
       '📲 Buy virtual phone numbers to verify any app.\n' +
       '📡 eSIM data plans for travelers.\n' +
+      '🛒 Digital accounts — Email, Social, Streaming & more.\n' +
       '⚡ Instant delivery at the best prices.',
     welcome_back:
       '👋 Welcome back, *{email}*!\n\nUse the menu below or open your dashboard.',
@@ -145,6 +146,7 @@ const translations: Record<Lang, Record<string, string>> = {
       '🎉 *مرحبًا بك في SMS Shop!*\n\n' +
       '📲 اشترِ أرقام هواتف افتراضية للتحقق من أي تطبيق.\n' +
       '📡 باقات بيانات eSIM للمسافرين.\n' +
+      '🛒 حسابات رقمية — إيميل، سوشيال ميديا، ستريمينغ والمزيد.\n' +
       '⚡ توصيل فوري بأفضل الأسعار.',
     welcome_back: '👋 مرحبًا بعودتك، *{email}*!\n\nاستخدم القائمة أدناه أو افتح لوحة التحكم.',
     open_dashboard: 'افتح التطبيق الكامل:',
@@ -259,6 +261,7 @@ const translations: Record<Lang, Record<string, string>> = {
       '🎉 *Bienvenue sur SMS Shop!*\n\n' +
       '📲 Achetez des numéros virtuels pour vérifier n\'importe quelle app.\n' +
       '📡 Forfaits eSIM pour voyageurs.\n' +
+      '🛒 Comptes digitaux — Email, Réseaux sociaux, Streaming & plus.\n' +
       '⚡ Livraison instantanée aux meilleurs prix.',
     welcome_back: '👋 Bon retour, *{email}*!\n\nUtilisez le menu ci-dessous ou ouvrez votre tableau de bord.',
     open_dashboard: 'Ouvrir l\'application:',
@@ -373,6 +376,7 @@ const translations: Record<Lang, Record<string, string>> = {
       '🎉 *Selamat datang di SMS Shop!*\n\n' +
       '📲 Beli nomor telepon virtual untuk verifikasi aplikasi apa pun.\n' +
       '📡 Paket data eSIM untuk wisatawan.\n' +
+      '🛒 Akun digital — Email, Sosmed, Streaming & lainnya.\n' +
       '⚡ Pengiriman instan dengan harga terbaik.',
     welcome_back: '👋 Selamat datang kembali, *{email}*!\n\nGunakan menu di bawah atau buka dashboard Anda.',
     open_dashboard: 'Buka aplikasi lengkap:',
