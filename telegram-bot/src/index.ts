@@ -1490,6 +1490,84 @@ bot.action('adm_broadcast', async (ctx) => {
 });
 
 // ════════════════════════════════════════════════════════════════
+// /admin — Pending recharge requests (Telegram-ID gated)
+// ════════════════════════════════════════════════════════════════
+const ADMIN_TG_IDS = (process.env.ADMIN_TELEGRAM_IDS ?? '')
+  .split(',').map(s => parseInt(s.trim())).filter(Boolean);
+
+function isTgAdmin(id: number) { return ADMIN_TG_IDS.includes(id); }
+
+async function showAdminRecharges(ctx: any) {
+  if (!isTgAdmin(ctx.from!.id)) {
+    await ctx.reply('❌ Unauthorized.');
+    return;
+  }
+  if (!botAdminToken) {
+    await ctx.reply('❌ Admin token not ready. Try again in a moment.');
+    return;
+  }
+  try {
+    const res  = await makeApi(botAdminToken).get('/recharge/admin', { params: { status: 'PENDING' } });
+    const list: any[] = Array.isArray(res.data?.data) ? res.data.data : (Array.isArray(res.data) ? res.data : []);
+    if (!list.length) {
+      await ctx.reply('✅ No pending recharge requests.');
+      return;
+    }
+    for (const r of list.slice(0, 10)) {
+      const amt     = (r.amount / 100).toFixed(2);
+      const email   = r.user?.email ?? 'unknown';
+      const method  = r.method ?? '?';
+      const txid    = r.txid  ?? 'N/A';
+      const created = r.createdAt ? new Date(r.createdAt).toLocaleString() : '';
+      await ctx.reply(
+        `📥 *Recharge Request*\n\n` +
+        `🆔 \`${r.id}\`\n` +
+        `👤 ${email}\n` +
+        `💰 $${amt} — ${method}\n` +
+        `📎 TxID: \`${txid}\`\n` +
+        `🕐 ${created}`,
+        {
+          parse_mode: 'Markdown',
+          ...Markup.inlineKeyboard([
+            [
+              Markup.button.callback('✅ Approve', `rch_approve_${r.id}`),
+              Markup.button.callback('❌ Reject',  `rch_reject_${r.id}`),
+            ],
+          ]),
+        }
+      );
+    }
+    if (list.length > 10) await ctx.reply(`_… and ${list.length - 10} more._`, { parse_mode: 'Markdown' });
+  } catch (err: any) {
+    await ctx.reply(`❌ Error: ${err?.response?.data?.message || err.message}`);
+  }
+}
+
+bot.command('admin', (ctx) => showAdminRecharges(ctx));
+
+bot.action(/^rch_approve_(.+)$/, async (ctx) => {
+  if (!isTgAdmin(ctx.from!.id)) { await ctx.answerCbQuery('❌ Unauthorized'); return; }
+  const id = ctx.match[1];
+  try {
+    await makeApi(botAdminToken!).patch(`/recharge/admin/${id}/review`, { status: 'APPROVED' });
+    await ctx.editMessageReplyMarkup({ inline_keyboard: [] });
+    await ctx.answerCbQuery('✅ Approved');
+    await ctx.reply(`✅ Recharge \`${id}\` approved.`, { parse_mode: 'Markdown' });
+  } catch (err: any) {
+    await ctx.answerCbQuery('❌ Error');
+    await ctx.reply(`❌ ${err?.response?.data?.message || err.message}`);
+  }
+});
+
+bot.action(/^rch_reject_(.+)$/, async (ctx) => {
+  if (!isTgAdmin(ctx.from!.id)) { await ctx.answerCbQuery('❌ Unauthorized'); return; }
+  const id = ctx.match[1];
+  pending.set(ctx.chat!.id, { state: 'adm_rch_reject', data: { id } });
+  await ctx.answerCbQuery();
+  await ctx.reply(`Enter rejection reason for \`${id}\` (or send "none"):`, { parse_mode: 'Markdown' });
+});
+
+// ════════════════════════════════════════════════════════════════
 // TEXT HANDLER — State machine
 // ════════════════════════════════════════════════════════════════
 bot.on('text', async (ctx) => {
@@ -1831,6 +1909,22 @@ bot.on('text', async (ctx) => {
       try { await bot.telegram.sendMessage(id, `📢 *Announcement*\n\n${text}`, { parse_mode:'Markdown' }); sent++; } catch { failed++; }
     }
     await ctx.reply(`✅ Done! ✉️ Sent: ${sent} | ❌ Failed: ${failed}`);
+    return;
+  }
+
+  // ── ADMIN: Reject recharge reason ──
+  if (state.state === 'adm_rch_reject') {
+    pending.delete(chatId);
+    const reason = text === 'none' ? 'Rejected by admin' : text;
+    try {
+      await makeApi(botAdminToken!).patch(`/recharge/admin/${data.id}/review`, {
+        status: 'REJECTED',
+        adminNote: reason,
+      });
+      await ctx.reply(`❌ Recharge \`${data.id}\` rejected.\nReason: ${reason}`, { parse_mode: 'Markdown' });
+    } catch (err: any) {
+      await ctx.reply(`❌ Error: ${err?.response?.data?.message || err.message}`);
+    }
     return;
   }
 });
