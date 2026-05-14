@@ -1,17 +1,20 @@
-import { IsEnum, IsInt, IsOptional, IsString, Min } from 'class-validator';
+import { Transform } from 'class-transformer';
+import { IsEnum, IsNumber, IsOptional, IsString, IsUrl, Min } from 'class-validator';
 
 export enum RechargeMethod {
   BINANCE = 'BINANCE',
-  USDT = 'USDT',
-  IBAN = 'IBAN',
-  CIH = 'CIH',
+  USDT    = 'USDT',
+  IBAN    = 'IBAN',
+  CIH     = 'CIH',
 }
 
 export class CreateRechargeDto {
-  @IsInt()
-  @Min(100)
-  amount: number;
+  @IsNumber()
+  @Min(1)
+  amountUsd: number; // USD — converted to credits (×100) in the service
 
+  // Accept lowercase from Mini App ('binance') or uppercase ('BINANCE')
+  @Transform(({ value }) => (typeof value === 'string' ? value.toUpperCase() : value))
   @IsEnum(RechargeMethod)
   method: RechargeMethod;
 
@@ -20,12 +23,8 @@ export class CreateRechargeDto {
   txid?: string;
 
   @IsOptional()
-  @IsString()
-  screenshot?: string;
-
-  @IsOptional()
-  @IsString()
-  screenshotHash?: string;
+  @IsUrl()
+  proofUrl?: string; // screenshot / payment proof URL
 }
 
 export class ReviewRechargeDto {

@@ -3,9 +3,10 @@ import { RechargeService } from './recharge.service';
 import { RechargeController } from './recharge.controller';
 import { PrismaModule } from '../prisma/prisma.module';
 import { WalletModule } from '../wallet/wallet.module';
+import { RedisModule } from '../redis/redis.module';
 
 @Module({
-  imports: [PrismaModule, WalletModule],
+  imports: [PrismaModule, WalletModule, RedisModule],
   controllers: [RechargeController],
   providers: [RechargeService],
 })
