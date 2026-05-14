@@ -25,6 +25,7 @@ const CRYPTOMUS_MERCHANT = process.env.CRYPTOMUS_MERCHANT_ID ?? '';
 const CRYPTOMUS_KEY      = process.env.CRYPTOMUS_API_KEY ?? '';
 const SUPPORT_USERNAME   = process.env.SUPPORT_USERNAME ?? 'toopsellerr';
 const SHOP_NAME          = process.env.SHOP_NAME ?? 'toopseller';
+const WELCOME_IMAGE_URL  = process.env.WELCOME_IMAGE_URL ?? '';
 
 if (!BOT_TOKEN) throw new Error('TELEGRAM_BOT_TOKEN is required');
 console.log(`🤖 API: ${API_URL} | SMSPool: ${SMSPOOL_KEY ? '✅' : '❌'} | Cryptomus: ${CRYPTOMUS_MERCHANT ? '✅' : '❌'}`);
@@ -67,6 +68,27 @@ const userOrders     = new Map<number, string[]>();
 const paymentPolls   = new Map<string, NodeJS.Timeout>(); // uuid → interval
 const pendingDeposits= new Map<string, { chatId: number; amountUsd: number; credits: number }>(); // uuid → info
 const digitalProducts= new Map<string, DigitalProduct>(); // productId → product
+
+let scheduledBroadcast: {
+  message: string; photoUrl?: string;
+  intervalMs: number; timer: NodeJS.Timeout;
+} | null = null;
+
+async function runBroadcast(message: string, photoUrl?: string) {
+  const chatIds = [...sessions.keys()];
+  let sent = 0, failed = 0;
+  for (const id of chatIds) {
+    try {
+      if (photoUrl) {
+        await bot.telegram.sendPhoto(id, photoUrl, { caption: message, parse_mode: 'Markdown' });
+      } else {
+        await bot.telegram.sendMessage(id, message, { parse_mode: 'Markdown' });
+      }
+      sent++;
+    } catch { failed++; }
+  }
+  return { sent, failed };
+}
 
 function getLang(chatId: number): string { return userLang.get(chatId) ?? 'en'; }
 
@@ -350,18 +372,18 @@ bot.telegram.getMe().then((me) => { botUsername = me.username ?? botUsername; })
 // /start
 // ════════════════════════════════════════════════════════════════
 async function showAuthMenu(ctx: any) {
-  const chatId = ctx.chat?.id ?? ctx.chat!.id;
-  const lang   = getLang(chatId);
-  await ctx.reply(
-    t(lang, 'welcome'),
-    {
-      parse_mode: 'Markdown',
-      ...Markup.inlineKeyboard([
-        [Markup.button.callback(t(lang, 'btn_login'),    'do_login')],
-        [Markup.button.callback(t(lang, 'btn_register'), 'do_register')],
-      ]),
-    },
-  );
+  const chatId  = ctx.chat?.id ?? ctx.chat!.id;
+  const lang    = getLang(chatId);
+  const caption = t(lang, 'welcome');
+  const keyboard = Markup.inlineKeyboard([
+    [Markup.button.callback(t(lang, 'btn_login'),    'do_login')],
+    [Markup.button.callback(t(lang, 'btn_register'), 'do_register')],
+  ]);
+  if (WELCOME_IMAGE_URL) {
+    await ctx.replyWithPhoto(WELCOME_IMAGE_URL, { caption, parse_mode: 'Markdown', ...keyboard });
+  } else {
+    await ctx.reply(caption, { parse_mode: 'Markdown', ...keyboard });
+  }
 }
 
 bot.start(async (ctx) => {
@@ -376,14 +398,17 @@ bot.start(async (ctx) => {
 
   const session = sessions.get(chatId);
   if (session) {
-    const lang   = getLang(chatId);
+    const lang    = getLang(chatId);
+    const caption = t(lang, 'welcome_back', { email: session.email });
+    const kb      = getKeyboard(chatId, session.role);
+    if (WELCOME_IMAGE_URL) {
+      await ctx.replyWithPhoto(WELCOME_IMAGE_URL, { caption, parse_mode: 'Markdown', ...kb });
+    } else {
+      await ctx.reply(caption, { parse_mode: 'Markdown', ...kb });
+    }
     const appUrl = process.env.BOT_PUBLIC_URL
       ? `${process.env.BOT_PUBLIC_URL.replace(/\/$/, '')}/app`
       : null;
-    await ctx.reply(
-      t(lang, 'welcome_back', { email: session.email }),
-      { parse_mode: 'Markdown', ...getKeyboard(chatId, session.role) },
-    );
     if (appUrl) {
       await ctx.reply(
         t(lang, 'open_dashboard'),
@@ -1586,6 +1611,69 @@ bot.action('adm_broadcast', async (ctx) => {
 });
 
 // ════════════════════════════════════════════════════════════════
+// SCHEDULED BROADCAST
+// ════════════════════════════════════════════════════════════════
+bot.action('adm_sched', async (ctx) => {
+  await ctx.answerCbQuery();
+  const status = scheduledBroadcast
+    ? `✅ *Active* — every ${scheduledBroadcast.intervalMs / 3_600_000}h\n📝 "${scheduledBroadcast.message.slice(0, 60)}..."`
+    : '⏸️ *No active scheduled post.*';
+  await ctx.reply(
+    `⏰ *Scheduled Post*\n\n${status}`,
+    {
+      parse_mode: 'Markdown',
+      ...Markup.inlineKeyboard([
+        [Markup.button.callback('➕ Set New Schedule', 'adm_sched_new')],
+        ...(scheduledBroadcast ? [[Markup.button.callback('🛑 Stop Schedule', 'adm_sched_stop')]] : []),
+        [Markup.button.callback('📤 Send Once Now',    'adm_sched_now')],
+      ]),
+    },
+  );
+});
+
+bot.action('adm_sched_stop', async (ctx) => {
+  await ctx.answerCbQuery('Stopped');
+  if (scheduledBroadcast) {
+    clearInterval(scheduledBroadcast.timer);
+    scheduledBroadcast = null;
+  }
+  await ctx.reply('🛑 Scheduled broadcast stopped.');
+});
+
+bot.action('adm_sched_now', async (ctx) => {
+  await ctx.answerCbQuery('Sending...');
+  if (!scheduledBroadcast) { await ctx.reply('❌ No scheduled post set. Create one first.'); return; }
+  await ctx.reply('📤 Sending...');
+  const { sent, failed } = await runBroadcast(scheduledBroadcast.message, scheduledBroadcast.photoUrl);
+  await ctx.reply(`✅ Done! Sent: ${sent} | Failed: ${failed}`);
+});
+
+bot.action('adm_sched_new', async (ctx) => {
+  await ctx.answerCbQuery();
+  await ctx.reply(
+    '⏰ *New Scheduled Post*\n\nChoose send interval:',
+    {
+      parse_mode: 'Markdown',
+      ...Markup.inlineKeyboard([
+        [Markup.button.callback('Every 1h',  'adm_sched_iv_1')],
+        [Markup.button.callback('Every 6h',  'adm_sched_iv_6')],
+        [Markup.button.callback('Every 12h', 'adm_sched_iv_12')],
+        [Markup.button.callback('Every 24h', 'adm_sched_iv_24')],
+        [Markup.button.callback('Every 48h', 'adm_sched_iv_48')],
+      ]),
+    },
+  );
+});
+
+bot.action(/^adm_sched_iv_(\d+)$/, async (ctx) => {
+  const hours  = parseInt(ctx.match[1]);
+  const chatId = ctx.chat!.id;
+  await ctx.answerCbQuery(`Every ${hours}h selected`);
+  pending.set(chatId, { state: 'adm_sched_msg', data: { intervalMs: String(hours * 3_600_000) } });
+  await ctx.reply('📝 Enter the message to broadcast:\n_(Markdown supported)_', { parse_mode: 'Markdown' });
+});
+
+// ════════════════════════════════════════════════════════════════
 // DIGITAL STORE — User flow
 // ════════════════════════════════════════════════════════════════
 async function showSupport(ctx: any) {
@@ -2037,7 +2125,8 @@ bot.on('text', async (ctx) => {
           [Markup.button.callback('👥 Users List',     'adm_users')],
           [Markup.button.callback('💰 Add Balance',    'adm_addbal')],
           [Markup.button.callback('🎟️ Create Coupon',  'adm_coupon')],
-          [Markup.button.callback('📢 Broadcast',      'adm_broadcast')],
+          [Markup.button.callback('📢 Broadcast Now',   'adm_broadcast')],
+          [Markup.button.callback('⏰ Scheduled Post',  'adm_sched')],
           [Markup.button.callback('💳 SMSPool Balance','adm_smsbal')],
           [Markup.button.callback('📡 eSIM Manager',   'adm_esim')],
           [Markup.button.callback('🛒 Digital Manager','adm_digital')],
@@ -2456,6 +2545,28 @@ bot.on('text', async (ctx) => {
       `✅ *${lines.length} item(s) added to ${product.name}!*\n📦 Total stock: *${availableStock(product).length}* available`,
       { parse_mode: 'Markdown' },
     );
+    return;
+  }
+
+  // ── SCHEDULED BROADCAST: message text ──
+  if (state.state === 'adm_sched_msg') {
+    data.message = text;
+    pending.set(chatId, { state: 'adm_sched_photo', data });
+    await ctx.reply('🖼️ Send a photo URL for the broadcast? (or /skip for text only)');
+    return;
+  }
+  if (state.state === 'adm_sched_photo') {
+    pending.delete(chatId);
+    const photoUrl    = text === '/skip' ? undefined : text.trim();
+    const intervalMs  = parseInt(data.intervalMs);
+    const message     = data.message;
+    if (scheduledBroadcast) clearInterval(scheduledBroadcast.timer);
+    const timer = setInterval(async () => { await runBroadcast(message, photoUrl); }, intervalMs);
+    scheduledBroadcast = { message, photoUrl, intervalMs, timer };
+    // Send first batch immediately
+    await ctx.reply(`⏰ *Schedule set! Sending first batch now...*`, { parse_mode: 'Markdown' });
+    const { sent, failed } = await runBroadcast(message, photoUrl);
+    await ctx.reply(`✅ Done! Sent: ${sent} | Failed: ${failed}\n\n_Next auto-send in ${intervalMs / 3_600_000}h_`, { parse_mode: 'Markdown' });
     return;
   }
 
