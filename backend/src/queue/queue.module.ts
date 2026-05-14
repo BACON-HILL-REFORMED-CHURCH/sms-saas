@@ -10,13 +10,15 @@ import { SMS_QUEUE } from './sms.queue';
   imports: [
     BullModule.forRootAsync({
       inject: [ConfigService],
-      useFactory: (config: ConfigService) => ({
-        connection: {
-          host: config.get('REDIS_HOST'),
-          port: config.get<number>('REDIS_PORT'),
-          password: config.get('REDIS_PASSWORD'),
-        },
-      }),
+      useFactory: (config: ConfigService) => {
+        const host = config.get('REDIS_HOST', 'localhost');
+        const port = config.get<number>('REDIS_PORT', 6379);
+        const password = config.get('REDIS_PASSWORD') || undefined;
+        const useTls = host !== 'localhost' && host !== '127.0.0.1';
+        return {
+          connection: { host, port, password, ...(useTls ? { tls: {} } : {}) },
+        };
+      },
     }),
     BullModule.registerQueue({ name: SMS_QUEUE }),
     forwardRef(() => OrdersModule),
