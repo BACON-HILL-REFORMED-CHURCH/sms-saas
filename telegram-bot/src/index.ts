@@ -23,7 +23,7 @@ const POLL_INTERVAL      = 30_000;
 const POLL_MAX           = 20;
 const CRYPTOMUS_MERCHANT = process.env.CRYPTOMUS_MERCHANT_ID ?? '';
 const CRYPTOMUS_KEY      = process.env.CRYPTOMUS_API_KEY ?? '';
-const SUPPORT_USERNAME   = process.env.SUPPORT_USERNAME ?? '';
+const SUPPORT_USERNAME   = process.env.SUPPORT_USERNAME ?? 'toopsellerr';
 const SHOP_NAME          = process.env.SHOP_NAME ?? 'SMS Shop';
 
 if (!BOT_TOKEN) throw new Error('TELEGRAM_BOT_TOKEN is required');
