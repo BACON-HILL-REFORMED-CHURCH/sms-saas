@@ -10,6 +10,7 @@ import crypto from 'crypto';
 import express from 'express';
 import path from 'path';
 import fs from 'fs';
+import { t } from './i18n';
 
 // ── Config ────────────────────────────────────────────────────
 const BOT_TOKEN          = process.env.TELEGRAM_BOT_TOKEN!;
@@ -50,6 +51,7 @@ interface SMSService  { ID: string; name: string; short_name: string; }
 
 // ── Storage ───────────────────────────────────────────────────
 const sessions    = new Map<number, UserSession>();
+const userLang    = new Map<number, string>();        // chatId → 'en'|'ar'|'fr'|'id'
 const pending     = new Map<number, PendingState>();
 const coupons     = new Map<string, Coupon>();
 const referrals   = new Map<number, number>();
@@ -59,6 +61,8 @@ const smsOrders      = new Map<string, SMSLocalOrder>();
 const userOrders     = new Map<number, string[]>();
 const paymentPolls   = new Map<string, NodeJS.Timeout>(); // uuid → interval
 const pendingDeposits= new Map<string, { chatId: number; amountUsd: number; credits: number }>(); // uuid → info
+
+function getLang(chatId: number): string { return userLang.get(chatId) ?? 'en'; }
 
 let botAdminToken: string | null  = null;
 let botUsername                   = 'smsshopbot';
@@ -268,19 +272,20 @@ function startPaymentPolling(uuid: string) {
 }
 
 // ── Keyboards ─────────────────────────────────────────────────
-function getKeyboard(role: string) {
+function getKeyboard(chatId: number, role: string) {
+  const lang   = getLang(chatId);
   const appUrl = process.env.BOT_PUBLIC_URL
     ? `${process.env.BOT_PUBLIC_URL.replace(/\/$/, '')}/app`
     : null;
 
   const rows: any[] = [
-    ['💰 Balance',       '💳 Deposit'],
-    ['📱 Buy Number',    '📡 eSIM'],
-    ['📋 My Orders',     '🎟️ Redeem Coupon'],
-    ['👥 Referral',      role === 'ADMIN' ? '⚙️ Admin Panel' : '🚪 Logout'],
+    [t(lang, 'btn_balance'),  t(lang, 'btn_deposit')],
+    [t(lang, 'btn_buy'),      t(lang, 'btn_esim')],
+    [t(lang, 'btn_orders'),   t(lang, 'btn_coupon')],
+    [t(lang, 'btn_referral'), role === 'ADMIN' ? t(lang, 'btn_admin') : t(lang, 'btn_logout')],
   ];
 
-  if (role === 'ADMIN') rows.push(['🚪 Logout']);
+  if (role === 'ADMIN') rows.push([t(lang, 'btn_logout')]);
 
   if (appUrl) {
     rows.unshift([Markup.button.webApp('🌐 Open App', appUrl)]);
@@ -324,6 +329,21 @@ bot.telegram.getMe().then((me) => { botUsername = me.username ?? botUsername; })
 // ════════════════════════════════════════════════════════════════
 // /start
 // ════════════════════════════════════════════════════════════════
+async function showAuthMenu(ctx: any) {
+  const chatId = ctx.chat?.id ?? ctx.chat!.id;
+  const lang   = getLang(chatId);
+  await ctx.reply(
+    t(lang, 'welcome'),
+    {
+      parse_mode: 'Markdown',
+      ...Markup.inlineKeyboard([
+        [Markup.button.callback(t(lang, 'btn_login'),    'do_login')],
+        [Markup.button.callback(t(lang, 'btn_register'), 'do_register')],
+      ]),
+    },
+  );
+}
+
 bot.start(async (ctx) => {
   const chatId = ctx.chat.id;
   pending.delete(chatId);
@@ -336,66 +356,87 @@ bot.start(async (ctx) => {
 
   const session = sessions.get(chatId);
   if (session) {
+    const lang   = getLang(chatId);
     const appUrl = process.env.BOT_PUBLIC_URL
       ? `${process.env.BOT_PUBLIC_URL.replace(/\/$/, '')}/app`
       : null;
-    const inlineButtons: any[] = appUrl
-      ? [[Markup.button.webApp('🌐 Open Dashboard', appUrl)]]
-      : [];
     await ctx.reply(
-      `👋 Welcome back, *${session.email}*!\n\nUse the menu below or open your dashboard.`,
-      { parse_mode:'Markdown', ...getKeyboard(session.role) },
+      t(lang, 'welcome_back', { email: session.email }),
+      { parse_mode: 'Markdown', ...getKeyboard(chatId, session.role) },
     );
-    if (inlineButtons.length) {
-      await ctx.reply('Open the full app:', Markup.inlineKeyboard(inlineButtons));
+    if (appUrl) {
+      await ctx.reply(
+        t(lang, 'open_dashboard'),
+        Markup.inlineKeyboard([[Markup.button.webApp('🌐 Open Dashboard', appUrl)]]),
+      );
     }
     return;
   }
 
+  // If language already chosen, show auth menu directly
+  if (userLang.has(chatId)) {
+    await showAuthMenu(ctx);
+    return;
+  }
+
+  // Language selection — shown in all 4 languages so first-time users understand
   await ctx.reply(
-    `🎉 *Welcome to SMS Shop!*\n\n` +
-    `📲 Buy virtual phone numbers to verify any app.\n` +
-    `📡 eSIM data plans for travelers.\n` +
-    `⚡ Instant delivery at the best prices.`,
+    '🌐 *Choose your language*\nاختر لغتك\nChoisissez votre langue\nPilih bahasa Anda',
     {
       parse_mode: 'Markdown',
       ...Markup.inlineKeyboard([
-        [Markup.button.callback('🔑 Login',         'do_login')],
-        [Markup.button.callback('✨ Create Account', 'do_register')],
+        [
+          Markup.button.callback('English 🇬🇧',    'lang_en'),
+          Markup.button.callback('عربي 🇸🇦',        'lang_ar'),
+        ],
+        [
+          Markup.button.callback('Français 🇫🇷',   'lang_fr'),
+          Markup.button.callback('Indonesia 🇮🇩',  'lang_id'),
+        ],
       ]),
     },
   );
 });
 
+// ── Language selection handlers ───────────────────────────────
+const LANG_LABELS: Record<string, string> = {
+  lang_en: 'English 🇬🇧',
+  lang_ar: 'عربي 🇸🇦',
+  lang_fr: 'Français 🇫🇷',
+  lang_id: 'Indonesia 🇮🇩',
+};
+for (const [action, label] of Object.entries(LANG_LABELS)) {
+  const code = action.replace('lang_', '');
+  bot.action(action, async (ctx) => {
+    const chatId = ctx.chat!.id;
+    userLang.set(chatId, code);
+    await ctx.answerCbQuery(label);
+    await ctx.deleteMessage().catch(() => {});
+    await showAuthMenu(ctx);
+  });
+}
+
 bot.command('help', async (ctx) => {
   await ctx.reply(
-    `📖 *SMS Shop — Help*\n\n` +
-    `*How to buy a number:*\n` +
-    `1. Tap 📱 Buy Number\n` +
-    `2. Select country\n` +
-    `3. Select service (WhatsApp, Telegram...)\n` +
-    `4. Confirm purchase\n` +
-    `5. Get your number + wait for SMS automatically! 🔔\n\n` +
-    `*Credits:* 100 credits = $1.00\n` +
-    `*Referral:* Earn ${REFERRAL_BONUS} credits per friend\n\n` +
-    `_Contact admin to top up your balance._`,
+    t(getLang(ctx.chat.id), 'help_text', { bonus: REFERRAL_BONUS }),
     { parse_mode: 'Markdown' },
   );
 });
 
 // ── Auth ──────────────────────────────────────────────────────
-bot.action('do_login',    async (ctx) => { pending.set(ctx.chat!.id, {state:'login_email',    data:{}}); await ctx.reply('📧 Enter your email:');  await ctx.answerCbQuery(); });
-bot.action('do_register', async (ctx) => { pending.set(ctx.chat!.id, {state:'register_email', data:{}}); await ctx.reply('📧 Enter your email:'); await ctx.answerCbQuery(); });
+bot.action('do_login',    async (ctx) => { const id = ctx.chat!.id; pending.set(id, {state:'login_email',    data:{}}); await ctx.reply(t(getLang(id), 'enter_email'));  await ctx.answerCbQuery(); });
+bot.action('do_register', async (ctx) => { const id = ctx.chat!.id; pending.set(id, {state:'register_email', data:{}}); await ctx.reply(t(getLang(id), 'enter_email')); await ctx.answerCbQuery(); });
 
 // ════════════════════════════════════════════════════════════════
 // BALANCE
 // ════════════════════════════════════════════════════════════════
 async function showBalance(ctx: any, session: UserSession) {
+  const lang = getLang(ctx.chat?.id ?? ctx.chat!.id);
   try {
     const res = await makeApi(session.token).get('/wallet/balance');
     const { balance } = unwrap(res);
     await ctx.reply(
-      `💰 *Your Balance*\n\n*${balance}* credits\n≈ $${(balance / CREDITS_PER_USD).toFixed(2)} USD`,
+      t(lang, 'balance_display', { balance, usd: (balance / CREDITS_PER_USD).toFixed(2) }),
       { parse_mode: 'Markdown' },
     );
   } catch (err) { await ctx.reply(`❌ ${errMsg(err)}`); }
@@ -405,27 +446,25 @@ async function showBalance(ctx: any, session: UserSession) {
 // DEPOSIT — Cryptomus crypto payments
 // ════════════════════════════════════════════════════════════════
 async function showDeposit(ctx: any) {
+  const chatId = ctx.chat.id;
+  const lang   = getLang(chatId);
   if (!CRYPTOMUS_MERCHANT || !CRYPTOMUS_KEY) {
-    const chatId = ctx.chat.id;
     pending.set(chatId, { state: 'recharge_method', data: {} });
     await ctx.reply(
-      `💳 *Recharge Request*\n\nSelect your payment method:`,
+      t(lang, 'recharge_select_method'),
       {
         parse_mode: 'Markdown',
         ...Markup.keyboard([
           ['💛 Binance ID', '💚 USDT TRC20'],
           ['🏦 IBAN', '🏧 CIH Bank'],
-          ['❌ Cancel'],
+          [t(lang, 'btn_cancel')],
         ]).resize(),
       }
     );
     return;
   }
   await ctx.reply(
-    `💳 *Deposit Credits*\n\n` +
-    `💱 Pay with crypto (Bitcoin, USDT, ETH and more)\n` +
-    `📊 Rate: $1 = ${CREDITS_PER_USD} credits\n\n` +
-    `Choose deposit amount:`,
+    t(lang, 'deposit_crypto', { rate: CREDITS_PER_USD }),
     {
       parse_mode: 'Markdown',
       ...Markup.inlineKeyboard([
@@ -905,7 +944,7 @@ async function showOrders(ctx: any, _session: UserSession) {
   const orderIds = userOrders.get(chatId) ?? [];
 
   if (!orderIds.length) {
-    await ctx.reply('📋 No orders yet.\n\nTap *📱 Buy Number* to get started!', { parse_mode:'Markdown' });
+    await ctx.reply(t(getLang(chatId), 'no_orders'), { parse_mode:'Markdown' });
     return;
   }
 
@@ -1206,8 +1245,9 @@ bot.action('esim_orders', async (ctx) => {
 // COUPON
 // ════════════════════════════════════════════════════════════════
 async function showRedeemCoupon(ctx: any) {
-  pending.set(ctx.chat?.id, { state:'redeem_coupon', data:{} });
-  await ctx.reply('🎟️ *Redeem Coupon*\n\nEnter your coupon code:', { parse_mode:'Markdown' });
+  const chatId = ctx.chat?.id;
+  pending.set(chatId, { state:'redeem_coupon', data:{} });
+  await ctx.reply(t(getLang(chatId), 'coupon_prompt'), { parse_mode:'Markdown' });
 }
 
 // ════════════════════════════════════════════════════════════════
@@ -1217,7 +1257,7 @@ async function showReferral(ctx: any) {
   const chatId = ctx.chat?.id;
   const link   = `https://t.me/${botUsername}?start=ref_${chatId}`;
   await ctx.reply(
-    `👥 *Referral Program*\n\nInvite friends & earn *${REFERRAL_BONUS} credits* each!\n\n🔗 Your link:\n\`${link}\``,
+    t(getLang(chatId), 'referral_msg', { bonus: REFERRAL_BONUS, link }),
     { parse_mode:'Markdown' },
   );
 }
@@ -1225,22 +1265,6 @@ async function showReferral(ctx: any) {
 // ════════════════════════════════════════════════════════════════
 // ADMIN PANEL
 // ════════════════════════════════════════════════════════════════
-bot.hears('⚙️ Admin Panel', async (ctx) => {
-  const session = sessions.get(ctx.chat.id);
-  if (!session || session.role !== 'ADMIN') return;
-  await ctx.reply('🔧 *Admin Panel*', {
-    parse_mode:'Markdown',
-    ...Markup.inlineKeyboard([
-      [Markup.button.callback('📊 Statistics',     'adm_stats')],
-      [Markup.button.callback('👥 Users List',     'adm_users')],
-      [Markup.button.callback('💰 Add Balance',    'adm_addbal')],
-      [Markup.button.callback('🎟️ Create Coupon',  'adm_coupon')],
-      [Markup.button.callback('📢 Broadcast',      'adm_broadcast')],
-      [Markup.button.callback('💳 SMSPool Balance','adm_smsbal')],
-      [Markup.button.callback('📡 eSIM Manager',   'adm_esim')],
-    ]),
-  });
-});
 
 // ── eSIM Manager ──────────────────────────────────────────────
 bot.action('adm_esim', async (ctx) => {
@@ -1595,7 +1619,36 @@ async function showAdminRecharges(ctx: any) {
   }
 }
 
-bot.command('admin', (ctx) => showAdminRecharges(ctx));
+bot.command('admin',   (ctx) => showAdminRecharges(ctx));
+
+// ── Extra slash commands (shown in bot menu) ──────────────────
+bot.command('balance', async (ctx) => {
+  const chatId  = ctx.chat.id;
+  const session = sessions.get(chatId);
+  if (!session) { await ctx.reply(t(getLang(chatId), 'unauthorized')); return; }
+  return showBalance(ctx, session);
+});
+
+bot.command('buy', async (ctx) => {
+  const chatId  = ctx.chat.id;
+  const session = sessions.get(chatId);
+  if (!session) { await ctx.reply(t(getLang(chatId), 'unauthorized')); return; }
+  return showCountries(ctx);
+});
+
+bot.command('orders', async (ctx) => {
+  const chatId  = ctx.chat.id;
+  const session = sessions.get(chatId);
+  if (!session) { await ctx.reply(t(getLang(chatId), 'unauthorized')); return; }
+  return showOrders(ctx, session);
+});
+
+bot.command('deposit', async (ctx) => {
+  const chatId  = ctx.chat.id;
+  const session = sessions.get(chatId);
+  if (!session) { await ctx.reply(t(getLang(chatId), 'unauthorized')); return; }
+  return showDeposit(ctx);
+});
 
 bot.action(/^rch_approve_(.+)$/, async (ctx) => {
   if (!isTgAdmin(ctx.from!.id)) { await ctx.answerCbQuery('❌ Unauthorized'); return; }
@@ -1628,18 +1681,34 @@ bot.on('text', async (ctx) => {
   const session = sessions.get(chatId);
   const state   = pending.get(chatId);
 
-  // Keyboard shortcuts
+  // Keyboard shortcuts (labels are language-aware)
   if (session && !state) {
-    if (text === '💰 Balance')        return showBalance(ctx, session);
-    if (text === '💳 Deposit')        return showDeposit(ctx);
-    if (text === '📋 My Orders')      return showOrders(ctx, session);
-    if (text === '📱 Buy Number')     return showCountries(ctx);
-    if (text === '📡 eSIM')           return showEsimProducts(ctx, session);
-    if (text === '🎟️ Redeem Coupon')  return showRedeemCoupon(ctx);
-    if (text === '👥 Referral')       return showReferral(ctx);
-    if (text === '🚪 Logout') {
+    const lang = getLang(chatId);
+    if (text === t(lang, 'btn_balance'))  return showBalance(ctx, session);
+    if (text === t(lang, 'btn_deposit'))  return showDeposit(ctx);
+    if (text === t(lang, 'btn_orders'))   return showOrders(ctx, session);
+    if (text === t(lang, 'btn_buy'))      return showCountries(ctx);
+    if (text === t(lang, 'btn_esim'))     return showEsimProducts(ctx, session);
+    if (text === t(lang, 'btn_coupon'))   return showRedeemCoupon(ctx);
+    if (text === t(lang, 'btn_referral')) return showReferral(ctx);
+    if (text === t(lang, 'btn_admin') && session.role === 'ADMIN') {
+      await ctx.reply('🔧 *Admin Panel*', {
+        parse_mode: 'Markdown',
+        ...Markup.inlineKeyboard([
+          [Markup.button.callback('📊 Statistics',     'adm_stats')],
+          [Markup.button.callback('👥 Users List',     'adm_users')],
+          [Markup.button.callback('💰 Add Balance',    'adm_addbal')],
+          [Markup.button.callback('🎟️ Create Coupon',  'adm_coupon')],
+          [Markup.button.callback('📢 Broadcast',      'adm_broadcast')],
+          [Markup.button.callback('💳 SMSPool Balance','adm_smsbal')],
+          [Markup.button.callback('📡 eSIM Manager',   'adm_esim')],
+        ]),
+      });
+      return;
+    }
+    if (text === t(lang, 'btn_logout')) {
       sessions.delete(chatId);
-      await ctx.reply('👋 Logged out. See you soon!', Markup.removeKeyboard());
+      await ctx.reply(t(lang, 'logged_out'), Markup.removeKeyboard());
     }
     return;
   }
@@ -1648,8 +1717,9 @@ bot.on('text', async (ctx) => {
   const { data } = state;
 
   // ── LOGIN ──
-  if (state.state === 'login_email')    { data.email = text; pending.set(chatId,{state:'login_password',data}); await ctx.reply('🔒 Enter password:'); return; }
+  if (state.state === 'login_email')    { data.email = text; pending.set(chatId,{state:'login_password',data}); await ctx.reply(t(getLang(chatId), 'enter_password')); return; }
   if (state.state === 'login_password') {
+    const lang = getLang(chatId);
     pending.delete(chatId);
     try {
       const res    = await makeApi().post('/auth/login', { email:data.email, password:text });
@@ -1666,19 +1736,20 @@ bot.on('text', async (ctx) => {
       if (tgId) {
         try { await makeApi(result.accessToken).patch('/auth/link-telegram', { telegramId: tgId }); } catch {}
       }
-      await ctx.reply(`✅ *Welcome back, ${data.email}!*`, { parse_mode:'Markdown', ...getKeyboard(role) });
-    } catch (err) { await ctx.reply(`❌ ${errMsg(err)}\n\nTry again: /start`); }
+      await ctx.reply(t(lang, 'login_success', { email: data.email }), { parse_mode:'Markdown', ...getKeyboard(chatId, role) });
+    } catch (err) { await ctx.reply(t(getLang(chatId), 'login_error', { msg: errMsg(err) }), { parse_mode:'Markdown' }); }
     return;
   }
 
   // ── REGISTER ──
-  if (state.state === 'register_email')    { data.email = text; pending.set(chatId,{state:'register_password',data}); await ctx.reply('🔒 Choose a password (min 8 chars):'); return; }
+  if (state.state === 'register_email')    { data.email = text; pending.set(chatId,{state:'register_password',data}); await ctx.reply(t(getLang(chatId), 'choose_password')); return; }
   if (state.state === 'register_password') {
+    const lang = getLang(chatId);
     pending.delete(chatId);
     try {
       await makeApi().post('/auth/register', { email:data.email, password:text });
-      await ctx.reply('✅ *Account Created!*\n\nVerify your email, then /start to login.', { parse_mode:'Markdown' });
-    } catch (err) { await ctx.reply(`❌ ${errMsg(err)}\n\nTry again: /start`); }
+      await ctx.reply(t(lang, 'register_success'), { parse_mode:'Markdown' });
+    } catch (err) { await ctx.reply(t(lang, 'register_error', { msg: errMsg(err) }), { parse_mode:'Markdown' }); }
     return;
   }
 
@@ -1863,56 +1934,59 @@ bot.on('text', async (ctx) => {
 
   // ── MANUAL RECHARGE: Method selection ──
   if (state.state === 'recharge_method') {
+    const lang = getLang(chatId);
     const methodMap: Record<string, string> = {
       '💛 Binance ID': 'BINANCE',
       '💚 USDT TRC20': 'USDT',
       '🏦 IBAN': 'IBAN',
       '🏧 CIH Bank': 'CIH',
     };
-    if (text === '❌ Cancel') {
+    if (text === t(lang, 'btn_cancel')) {
       pending.delete(chatId);
-      const kb = session ? getKeyboard(session.role) : Markup.removeKeyboard();
-      await ctx.reply('❌ Cancelled.', kb);
+      const kb = session ? getKeyboard(chatId, session.role) : Markup.removeKeyboard();
+      await ctx.reply(t(lang, 'cancelled'), kb);
       return;
     }
     const method = methodMap[text];
-    if (!method) { await ctx.reply('Please select a method from the keyboard:'); return; }
+    if (!method) { await ctx.reply(t(lang, 'recharge_select_prompt')); return; }
     pending.set(chatId, { state: 'recharge_amount', data: { method } });
     await ctx.reply(
-      `✅ Method: *${text}*\n\nEnter the amount in USD (e.g. 10):`,
-      { parse_mode: 'Markdown', ...Markup.keyboard([['❌ Cancel']]).resize() }
+      t(lang, 'recharge_method_chosen', { method: text }),
+      { parse_mode: 'Markdown', ...Markup.keyboard([[t(lang, 'btn_cancel')]]).resize() }
     );
     return;
   }
 
   // ── MANUAL RECHARGE: Amount ──
   if (state.state === 'recharge_amount') {
-    if (text === '❌ Cancel') {
+    const lang = getLang(chatId);
+    if (text === t(lang, 'btn_cancel')) {
       pending.delete(chatId);
-      const kb = session ? getKeyboard(session.role) : Markup.removeKeyboard();
-      await ctx.reply('❌ Cancelled.', kb);
+      const kb = session ? getKeyboard(chatId, session.role) : Markup.removeKeyboard();
+      await ctx.reply(t(lang, 'cancelled'), kb);
       return;
     }
     const amount = parseFloat(text);
-    if (isNaN(amount) || amount < 1) { await ctx.reply('❌ Please enter a valid amount (minimum $1):'); return; }
+    if (isNaN(amount) || amount < 1) { await ctx.reply(t(lang, 'recharge_invalid_amount')); return; }
     pending.set(chatId, { state: 'recharge_txid', data: { ...data, amount: String(amount) } });
     await ctx.reply(
-      `✅ Amount: *$${amount}*\n\nEnter your transaction ID or reference number:`,
-      { parse_mode: 'Markdown', ...Markup.keyboard([['❌ Cancel']]).resize() }
+      t(lang, 'recharge_amount_chosen', { amount }),
+      { parse_mode: 'Markdown', ...Markup.keyboard([[t(lang, 'btn_cancel')]]).resize() }
     );
     return;
   }
 
   // ── MANUAL RECHARGE: TxID & submit ──
   if (state.state === 'recharge_txid') {
-    if (text === '❌ Cancel') {
+    const lang = getLang(chatId);
+    if (text === t(lang, 'btn_cancel')) {
       pending.delete(chatId);
-      const kb = session ? getKeyboard(session.role) : Markup.removeKeyboard();
-      await ctx.reply('❌ Cancelled.', kb);
+      const kb = session ? getKeyboard(chatId, session.role) : Markup.removeKeyboard();
+      await ctx.reply(t(lang, 'cancelled'), kb);
       return;
     }
     pending.delete(chatId);
-    if (!session) { await ctx.reply('❌ Please login first.'); return; }
+    if (!session) { await ctx.reply(t(lang, 'unauthorized')); return; }
     const methodDisplay: Record<string, string> = {
       BINANCE: '💛 Binance ID', USDT: '💚 USDT TRC20', IBAN: '🏦 IBAN', CIH: '🏧 CIH Bank',
     };
@@ -1923,17 +1997,16 @@ bot.on('text', async (ctx) => {
         txid: text,
       });
       await ctx.reply(
-        `✅ *Recharge Request Submitted!*\n\n` +
-        `Method: ${methodDisplay[data.method] || data.method}\n` +
-        `Amount: *$${data.amount}*\n` +
-        `TxID: \`${text}\`\n` +
-        `Status: *PENDING* ⏳\n\n` +
-        `Our team will review and approve within 24h.`,
-        { parse_mode: 'Markdown', ...getKeyboard(session.role) }
+        t(lang, 'recharge_submitted', {
+          method: methodDisplay[data.method] || data.method,
+          amount: data.amount,
+          txid: text,
+        }),
+        { parse_mode: 'Markdown', ...getKeyboard(chatId, session.role) }
       );
     } catch (err: any) {
       const msg = err?.response?.data?.message || err.message || 'Unknown error';
-      await ctx.reply(`❌ Error: ${msg}`, getKeyboard(session.role));
+      await ctx.reply(`❌ Error: ${msg}`, getKeyboard(chatId, session.role));
     }
     return;
   }
@@ -1998,6 +2071,21 @@ async function bootstrap() {
     botUsername = me.username ?? botUsername;
     console.log(`🤖 Bot: @${botUsername}`);
   } catch {}
+
+  // Register bot menu commands (the persistent "/" menu in Telegram)
+  try {
+    await bot.telegram.setMyCommands([
+      { command: 'start',   description: '🏠 Start / Restart' },
+      { command: 'balance', description: '💰 Check your balance' },
+      { command: 'buy',     description: '📱 Buy a phone number' },
+      { command: 'orders',  description: '📋 My orders' },
+      { command: 'deposit', description: '💳 Deposit credits' },
+      { command: 'admin',   description: '⚙️ Admin panel' },
+    ]);
+    console.log('✅ Bot commands registered');
+  } catch (err) {
+    console.warn('⚠️ setMyCommands failed:', err);
+  }
 
   // Auto admin login
   tryAutoAdminLogin();
