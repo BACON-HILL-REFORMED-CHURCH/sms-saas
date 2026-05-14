@@ -2,6 +2,9 @@
 // NestJS Bootstrap — SMS SaaS Backend
 // ============================================================
 
+// Sentry must be the very first import so it can instrument Node APIs
+import './instrument';
+
 import { NestFactory, Reflector } from '@nestjs/core';
 import { ValidationPipe, Logger } from '@nestjs/common';
 import { AppModule } from './app.module';

@@ -10,6 +10,7 @@
   },
   "dependencies": {
     "@hookform/resolvers": "^3.3.4",
+    "@sentry/nextjs": "^10.53.1",
     "@sms-saas/shared": "*",
     "axios": "^1.6.7",
     "clsx": "^2.1.0",

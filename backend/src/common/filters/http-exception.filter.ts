@@ -13,6 +13,7 @@ import {
   Logger,
 } from '@nestjs/common';
 import { Request, Response } from 'express';
+import * as Sentry from '@sentry/node';
 
 @Catch()
 export class GlobalExceptionFilter implements ExceptionFilter {
@@ -40,12 +41,15 @@ export class GlobalExceptionFilter implements ExceptionFilter {
       message = exception.message;
     }
 
-    // Log server errors (not 4xx — too noisy)
+    // Log + report server errors (not 4xx — too noisy)
     if (status >= 500) {
       this.logger.error(
         `${request.method} ${request.url} → ${status}`,
         exception instanceof Error ? exception.stack : String(exception),
       );
+      Sentry.captureException(exception, {
+        extra: { method: request.method, url: request.url, statusCode: status },
+      });
     }
 
     response.status(status).json({
