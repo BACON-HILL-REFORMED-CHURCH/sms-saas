@@ -45,18 +45,10 @@ export class OrdersService {
   // ── Create order ──────────────────────────────────────────
 
   async createOrder(userId: string, dto: CreateOrderDto) {
-    // 1. Pick provider
-    const provider = dto.provider
-      ? this.registry.get(dto.provider)
-      : await this.registry.getBest(dto.service, dto.country);
-
-    // 2. Get number from provider
-    let providerNumber;
-    try {
-      providerNumber = await provider.getNumber(dto.service, dto.country);
-    } catch (err) {
-      throw new BadRequestException(`Provider error: ${err.message}`);
-    }
+    // 1. Get a number — circuit-broken, with automatic fallback when auto-selecting
+    const { provider, number: providerNumber } = dto.provider
+      ? await this.registry.getNumberFrom(dto.provider, dto.service, dto.country)
+      : await this.registry.getBestNumber(dto.service, dto.country);
 
     // 3. Calculate price with margin
     const price = this.applyMargin(providerNumber.cost, DEFAULT_MARGIN_PERCENT);

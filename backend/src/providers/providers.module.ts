@@ -1,11 +1,6 @@
-// ============================================================
-// ProvidersModule — abstract SMS provider layer
-// To add a new provider: create a class in ./adapters/
-//   that extends BaseSmsProvider and register it in PROVIDERS token
-// ============================================================
-
 import { Module } from '@nestjs/common';
 import { ProviderRegistryService } from './provider-registry.service';
+import { CircuitBreakerService } from './circuit-breaker.service';
 import { ProvidersController } from './providers.controller';
 import { MockProvider } from './adapters/mock.provider';
 // import { FiveSimProvider }      from './adapters/5sim.provider';
@@ -13,11 +8,13 @@ import { MockProvider } from './adapters/mock.provider';
 
 @Module({
   providers: [
+    CircuitBreakerService,
     MockProvider,
     {
       provide: ProviderRegistryService,
-      useFactory: (...providers: any[]) => new ProviderRegistryService(providers),
-      inject: [MockProvider],
+      useFactory: (cb: CircuitBreakerService, mock: MockProvider) =>
+        new ProviderRegistryService([mock], cb),
+      inject: [CircuitBreakerService, MockProvider],
     },
   ],
   controllers: [ProvidersController],
