@@ -258,6 +258,90 @@
     .text-hint { color: var(--hint); font-size: 13px; }
     .mt8 { margin-top: 8px; }
     .mt16 { margin-top: 16px; }
+
+    /* ── Topbar profile button ── */
+    .topbar-btn {
+      background: var(--card); border: 1px solid var(--border);
+      border-radius: 50%; width: 36px; height: 36px;
+      display: flex; align-items: center; justify-content: center;
+      font-size: 18px; cursor: pointer; flex-shrink: 0;
+    }
+
+    /* ── Account overlay ── */
+    #account-overlay {
+      position: fixed; inset: 0; background: var(--bg);
+      z-index: 200; transform: translateX(100%);
+      transition: transform 0.28s ease; overflow-y: auto;
+      display: flex; flex-direction: column;
+    }
+    #account-overlay.open { transform: translateX(0); }
+    .overlay-header {
+      display: flex; align-items: center; gap: 12px;
+      padding: 14px 18px 12px;
+      border-bottom: 1px solid var(--border); flex-shrink: 0;
+      position: sticky; top: 0; background: var(--bg); z-index: 1;
+    }
+    .overlay-header .back-btn {
+      background: none; border: none; color: var(--text);
+      font-size: 22px; cursor: pointer; padding: 4px 8px 4px 0; line-height: 1;
+    }
+    .overlay-header .overlay-title { font-size: 17px; font-weight: 700; }
+    .avatar {
+      width: 64px; height: 64px; border-radius: 50%;
+      background: linear-gradient(135deg, var(--accent), #3f51b5);
+      display: flex; align-items: center; justify-content: center;
+      font-size: 28px; font-weight: 700; color: #fff;
+      margin: 0 auto 8px;
+    }
+
+    /* ── Method cards ── */
+    .method-grid {
+      display: grid; grid-template-columns: 1fr 1fr;
+      gap: 10px; margin-bottom: 16px;
+    }
+    .method-card {
+      background: var(--card); border: 1.5px solid var(--border);
+      border-radius: var(--radius); padding: 16px 12px;
+      display: flex; flex-direction: column; align-items: center;
+      gap: 8px; cursor: pointer; transition: all 0.18s;
+      font-size: 13px; font-weight: 500; text-align: center;
+    }
+    .method-card:active, .method-card.selected {
+      border-color: var(--accent); background: rgba(108,99,255,0.12);
+    }
+    .method-card .m-icon { font-size: 28px; }
+
+    /* ── Payment details ── */
+    .payment-details {
+      background: var(--card); border: 1px solid var(--border);
+      border-radius: var(--radius); padding: 0 16px; margin-bottom: 14px;
+    }
+    .detail-row {
+      display: flex; justify-content: space-between; align-items: center;
+      padding: 11px 0; border-bottom: 1px solid var(--border);
+    }
+    .detail-row:last-child { border-bottom: none; }
+    .detail-label { font-size: 12px; color: var(--hint); flex-shrink: 0; }
+    .detail-value {
+      font-size: 13px; font-weight: 600; text-align: right;
+      word-break: break-all; margin-left: 8px;
+    }
+    .copy-btn {
+      background: rgba(108,99,255,0.15); border: none; color: var(--accent);
+      border-radius: 8px; padding: 4px 10px; font-size: 12px;
+      cursor: pointer; margin-left: 8px; flex-shrink: 0; font-weight: 600;
+    }
+
+    /* ── Recharge history ── */
+    .recharge-item {
+      background: var(--card); border: 1px solid var(--border);
+      border-radius: 12px; padding: 12px 14px; margin-bottom: 8px;
+    }
+    .recharge-item .r-head {
+      display: flex; justify-content: space-between; align-items: center;
+      margin-bottom: 4px;
+    }
+    .recharge-item .r-amount { font-size: 15px; font-weight: 700; }
   </style>
 </head>
 <body>
@@ -271,11 +355,47 @@
 <!-- Toast -->
 <div id="toast"></div>
 
+<!-- Account Overlay -->
+<div id="account-overlay">
+  <div class="overlay-header">
+    <button class="back-btn" onclick="hideAccount()">←</button>
+    <span class="overlay-title">Account</span>
+  </div>
+  <div style="padding:20px 16px 100px;">
+    <div style="text-align:center;margin-bottom:24px;">
+      <div class="avatar" id="acct-avatar">👤</div>
+      <div style="font-size:18px;font-weight:700;margin-bottom:4px;" id="acct-name">—</div>
+      <div class="text-hint" id="acct-id">Telegram ID: —</div>
+    </div>
+
+    <div class="section-title">Referral Link</div>
+    <div class="card" style="margin-bottom:16px;">
+      <div style="word-break:break-all;font-size:13px;margin-bottom:10px;color:var(--hint);" id="acct-ref-link">—</div>
+      <div class="btn-row">
+        <button class="btn outline sm" onclick="copyText(document.getElementById('acct-ref-link').textContent)">📋 Copy</button>
+        <button class="btn sm" onclick="shareReferral()">📤 Share</button>
+      </div>
+    </div>
+
+    <div class="section-title">Recharge History</div>
+    <div id="acct-recharges">
+      <div class="empty"><div class="icon">📄</div><div>No recharges yet</div></div>
+    </div>
+
+    <div style="margin-top:24px;">
+      <button class="btn danger" onclick="logout()">🚪 Logout</button>
+    </div>
+  </div>
+</div>
+
 <!-- App -->
 <div id="app">
   <div id="topbar">
     <div class="brand"><span>📱</span> SMS Shop</div>
-    <div id="balance-badge">— credits</div>
+    <div style="display:flex;align-items:center;gap:8px;">
+      <div id="balance-badge">— credits</div>
+      <div class="topbar-btn" onclick="showAccount()">👤</div>
+    </div>
   </div>
 
   <div id="content">
@@ -288,8 +408,8 @@
       </div>
 
       <div class="quick-grid">
-        <div class="quick-btn" onclick="goTab('deposit')">
-          <span class="icon">💳</span> Deposit
+        <div class="quick-btn" onclick="goTab('wallet')">
+          <span class="icon">💳</span> Wallet
         </div>
         <div class="quick-btn" onclick="goTab('sms')">
           <span class="icon">📱</span> Buy SMS
@@ -390,38 +510,86 @@
       </div>
     </div>
 
-    <!-- DEPOSIT -->
-    <div class="page" id="page-deposit">
-      <div class="section-title">Choose Amount (USD)</div>
-      <div class="amount-chips" id="deposit-chips">
-        <div class="chip" onclick="selectDepositAmount(5,this)">$5</div>
-        <div class="chip" onclick="selectDepositAmount(10,this)">$10</div>
-        <div class="chip" onclick="selectDepositAmount(20,this)">$20</div>
-        <div class="chip" onclick="selectDepositAmount(50,this)">$50</div>
+    <!-- WALLET -->
+    <div class="page" id="page-wallet">
+      <div class="tabs">
+        <div class="tab active" id="wallet-tab-crypto" onclick="switchWalletTab('crypto')">₿ Crypto</div>
+        <div class="tab" id="wallet-tab-manual" onclick="switchWalletTab('manual')">🏦 Manual</div>
       </div>
-      <div class="form-group">
-        <label class="form-label">Custom Amount (USD)</label>
-        <input type="number" class="form-input" id="deposit-custom" placeholder="e.g. 15" min="1" max="500"
-               oninput="onDepositCustom(this.value)" />
-      </div>
-      <div class="card" id="deposit-summary" style="display:none;margin-bottom:14px;">
-        <div class="card-row"><span class="card-label">You Pay</span><span class="card-value text-green" id="dep-pay">—</span></div>
-        <div class="divider"></div>
-        <div class="card-row"><span class="card-label">You Get</span><span class="card-value" id="dep-get">—</span></div>
-      </div>
-      <button class="btn" id="deposit-btn" style="display:none" onclick="createDeposit()">💳 Pay with Crypto</button>
 
-      <div id="deposit-step-pay" style="display:none;margin-top:16px;">
-        <div class="card" style="text-align:center;padding:20px;">
-          <div style="font-size:36px;margin-bottom:12px;">₿</div>
-          <div class="text-hint" style="margin-bottom:6px;">Send exact amount to</div>
-          <div style="font-size:18px;font-weight:700;word-break:break-all;margin-bottom:6px;" id="dep-wallet">—</div>
-          <div style="font-size:22px;font-weight:800;color:var(--green);margin-bottom:4px;" id="dep-crypto-amount">—</div>
-          <div class="text-hint" id="dep-currency">—</div>
+      <!-- Crypto sub-tab -->
+      <div id="wallet-crypto">
+        <div class="section-title">Choose Amount (USD)</div>
+        <div class="amount-chips" id="deposit-chips">
+          <div class="chip" onclick="selectDepositAmount(5,this)">$5</div>
+          <div class="chip" onclick="selectDepositAmount(10,this)">$10</div>
+          <div class="chip" onclick="selectDepositAmount(20,this)">$20</div>
+          <div class="chip" onclick="selectDepositAmount(50,this)">$50</div>
         </div>
-        <a id="dep-pay-link" href="#" target="_blank" class="btn mt16" style="text-decoration:none;">🔗 Open Payment Page</a>
-        <button class="btn outline mt8" onclick="checkDeposit()">🔄 Check Payment</button>
-        <button class="btn outline mt8" style="color:var(--hint)" onclick="resetDeposit()">← New Amount</button>
+        <div class="form-group">
+          <label class="form-label">Custom Amount (USD)</label>
+          <input type="number" class="form-input" id="deposit-custom" placeholder="e.g. 15" min="1" max="500"
+                 oninput="onDepositCustom(this.value)" />
+        </div>
+        <div class="card" id="deposit-summary" style="display:none;margin-bottom:14px;">
+          <div class="card-row"><span class="card-label">You Pay</span><span class="card-value text-green" id="dep-pay">—</span></div>
+          <div class="divider"></div>
+          <div class="card-row"><span class="card-label">You Get</span><span class="card-value" id="dep-get">—</span></div>
+        </div>
+        <button class="btn" id="deposit-btn" style="display:none" onclick="createDeposit()">💳 Pay with Crypto</button>
+
+        <div id="deposit-step-pay" style="display:none;margin-top:16px;">
+          <div class="card" style="text-align:center;padding:20px;">
+            <div style="font-size:36px;margin-bottom:12px;">₿</div>
+            <div class="text-hint" style="margin-bottom:6px;">Send exact amount to</div>
+            <div style="font-size:18px;font-weight:700;word-break:break-all;margin-bottom:6px;" id="dep-wallet">—</div>
+            <div style="font-size:22px;font-weight:800;color:var(--green);margin-bottom:4px;" id="dep-crypto-amount">—</div>
+            <div class="text-hint" id="dep-currency">—</div>
+          </div>
+          <a id="dep-pay-link" href="#" target="_blank" class="btn mt16" style="text-decoration:none;">🔗 Open Payment Page</a>
+          <button class="btn outline mt8" onclick="checkDeposit()">🔄 Check Payment</button>
+          <button class="btn outline mt8" style="color:var(--hint)" onclick="resetDeposit()">← New Amount</button>
+        </div>
+      </div>
+
+      <!-- Manual sub-tab -->
+      <div id="wallet-manual" style="display:none;">
+        <div class="section-title">Payment Method</div>
+        <div class="method-grid">
+          <div class="method-card" id="m-binance" onclick="selectRechargeMethod('binance',this)">
+            <span class="m-icon">🟡</span>Binance Pay
+          </div>
+          <div class="method-card" id="m-usdt" onclick="selectRechargeMethod('usdt',this)">
+            <span class="m-icon">💚</span>USDT TRC20
+          </div>
+          <div class="method-card" id="m-iban" onclick="selectRechargeMethod('iban',this)">
+            <span class="m-icon">🏦</span>Bank Transfer
+          </div>
+          <div class="method-card" id="m-cih" onclick="selectRechargeMethod('cih',this)">
+            <span class="m-icon">🏛️</span>CIH Bank
+          </div>
+        </div>
+
+        <div id="manual-details" style="display:none;">
+          <div class="section-title">Payment Details</div>
+          <div class="payment-details" id="manual-details-card"></div>
+
+          <div class="section-title">Confirm Your Transfer</div>
+          <div class="form-group">
+            <label class="form-label">Amount (USD)</label>
+            <input type="number" class="form-input" id="manual-amount" placeholder="e.g. 20" min="1" max="1000" />
+          </div>
+          <div class="form-group">
+            <label class="form-label">Transaction ID / Reference</label>
+            <input type="text" class="form-input" id="manual-txid" placeholder="Paste your transaction ID" />
+          </div>
+          <div class="form-group">
+            <label class="form-label">Screenshot URL (optional)</label>
+            <input type="url" class="form-input" id="manual-screenshot" placeholder="https://…" />
+          </div>
+          <button class="btn" id="manual-submit-btn" onclick="submitRecharge()">📨 Submit Recharge Request</button>
+          <div class="text-hint mt8" style="text-align:center;">Reviewed within 24 hours</div>
+        </div>
       </div>
     </div>
 
@@ -448,9 +616,9 @@
       <span class="nav-icon">📡</span>
       <span class="nav-label">eSIM</span>
     </div>
-    <div class="nav-item" onclick="goTab('deposit')" id="nav-deposit">
+    <div class="nav-item" onclick="goTab('wallet')" id="nav-wallet">
       <span class="nav-icon">💳</span>
-      <span class="nav-label">Deposit</span>
+      <span class="nav-label">Wallet</span>
     </div>
     <div class="nav-item" onclick="goTab('orders')" id="nav-orders">
       <span class="nav-icon">📋</span>
@@ -463,9 +631,21 @@
 // ────────────────────────────────────────────────
 // Config
 // ────────────────────────────────────────────────
-const BACKEND = '__BACKEND_URL__'; // replaced at build time or runtime
+const BACKEND      = '__BACKEND_URL__';
+const BOT_USERNAME = '__BOT_USERNAME__';
 const tg = window.Telegram?.WebApp;
 const CREDITS_PER_USD = 100;
+
+// Payment details — injected at request time by Express
+const PAYMENT_INFO = {
+  binance: { label: 'Binance Pay', fields: [{ name: 'Binance Pay ID', value: '__BINANCE_ID__' }] },
+  usdt:    { label: 'USDT TRC20',  fields: [{ name: 'Wallet Address', value: '__USDT_ADDRESS__' }] },
+  iban:    { label: 'Bank Transfer (IBAN)', fields: [
+               { name: 'IBAN',      value: '__IBAN__' },
+               { name: 'Reference', value: 'SMS Shop Deposit' },
+             ]},
+  cih:     { label: 'CIH Bank',   fields: [{ name: 'Account', value: '__CIH_BANK__' }] },
+};
 
 // ────────────────────────────────────────────────
 // State
@@ -482,6 +662,7 @@ let esimSelectedGroup = null;
 let esimSelectedProduct = null;
 let depositAmount = 0;
 let depositPaymentUuid = '';
+let selectedRechargeMethod = null;
 
 // ────────────────────────────────────────────────
 // Init
@@ -543,21 +724,18 @@ async function api(path, method = 'GET', body = null) {
 // Navigation
 // ────────────────────────────────────────────────
 function goTab(tab) {
-  // Hide all pages with explicit inline style (overrides CSS)
+  if (tab === 'deposit') tab = 'wallet'; // backwards compat
   document.querySelectorAll('.page').forEach(p => { p.style.display = 'none'; p.classList.remove('active'); });
   document.querySelectorAll('.nav-item').forEach(n => n.classList.remove('active'));
-  // Show target page
   const page = document.getElementById('page-' + tab);
   if (page) { page.style.display = 'block'; page.classList.add('active'); }
   const nav = document.getElementById('nav-' + tab);
   if (nav) nav.classList.add('active');
   tg?.HapticFeedback?.selectionChanged?.();
-  // Load data for the tab
-  if (tab === 'home')    { loadBalance(); loadHomeTxns(); }
-  if (tab === 'sms')     loadSmsCountries();
-  if (tab === 'esim')    loadEsimProducts();
-  if (tab === 'deposit') { /* deposit UI is static */ }
-  if (tab === 'orders')  loadOrders();
+  if (tab === 'home')   { loadBalance(); loadHomeTxns(); }
+  if (tab === 'sms')    loadSmsCountries();
+  if (tab === 'esim')   loadEsimProducts();
+  if (tab === 'orders') loadOrders();
 }
 
 // ────────────────────────────────────────────────
@@ -1064,6 +1242,152 @@ function showToast(msg, duration = 2800) {
   el.classList.add('show');
   clearTimeout(toastTimer);
   toastTimer = setTimeout(() => el.classList.remove('show'), duration);
+}
+
+// ────────────────────────────────────────────────
+// Account overlay
+// ────────────────────────────────────────────────
+function showAccount() {
+  const overlay = document.getElementById('account-overlay');
+  overlay.classList.add('open');
+  if (USER) {
+    const first = USER.firstName || USER.name || USER.email || '';
+    const last  = USER.lastName || '';
+    const name  = (first + (last ? ' ' + last : '')).trim() || '—';
+    const initial = name[0]?.toUpperCase() || '?';
+    document.getElementById('acct-avatar').textContent = initial;
+    document.getElementById('acct-name').textContent = name;
+    document.getElementById('acct-id').textContent = 'Telegram ID: ' + (USER.telegramId || USER.id || '—');
+    document.getElementById('acct-ref-link').textContent =
+      `https://t.me/${BOT_USERNAME}?start=ref_${USER.id}`;
+  }
+  loadMyRecharges();
+  tg?.HapticFeedback?.impactOccurred?.('light');
+}
+
+function hideAccount() {
+  document.getElementById('account-overlay').classList.remove('open');
+}
+
+async function loadMyRecharges() {
+  try {
+    const data = await api('/recharge/my');
+    const list = Array.isArray(data) ? data : (data.recharges ?? []);
+    const el = document.getElementById('acct-recharges');
+    if (!list.length) {
+      el.innerHTML = '<div class="empty"><div class="icon">📄</div><div>No recharges yet</div></div>';
+      return;
+    }
+    el.innerHTML = list.map(r => `
+      <div class="recharge-item">
+        <div class="r-head">
+          <span class="r-amount">$${(r.amountUsd || 0).toFixed(2)}</span>
+          <span class="badge ${rechargeBadge(r.status)}">${r.status}</span>
+        </div>
+        <div style="display:flex;justify-content:space-between;">
+          <span class="text-hint">${r.method || 'Manual'}</span>
+          <span class="text-hint">${fmtDate(r.createdAt)}</span>
+        </div>
+      </div>
+    `).join('');
+  } catch {}
+}
+
+function rechargeBadge(s) {
+  return { PENDING: 'orange', APPROVED: 'green', REJECTED: 'red' }[s] || 'gray';
+}
+
+function shareReferral() {
+  const link = document.getElementById('acct-ref-link').textContent;
+  tg?.openTelegramLink?.(
+    `https://t.me/share/url?url=${encodeURIComponent(link)}&text=${encodeURIComponent('Join SMS Shop and get credits!')}`,
+  );
+}
+
+function logout() {
+  TOKEN = '';
+  USER  = null;
+  hideAccount();
+  showToast('Logged out. Reopen the app to sign in again.');
+}
+
+function copyText(text) {
+  if (navigator.clipboard) {
+    navigator.clipboard.writeText(text).then(() => showToast('✅ Copied!'));
+  } else {
+    const ta = document.createElement('textarea');
+    ta.value = text; document.body.appendChild(ta);
+    ta.select(); document.execCommand('copy');
+    document.body.removeChild(ta);
+    showToast('✅ Copied!');
+  }
+}
+
+// ────────────────────────────────────────────────
+// Wallet — sub-tabs & manual recharge
+// ────────────────────────────────────────────────
+function switchWalletTab(tab) {
+  const isManual = tab === 'manual';
+  document.getElementById('wallet-crypto').style.display = isManual ? 'none' : '';
+  document.getElementById('wallet-manual').style.display = isManual ? '' : 'none';
+  document.querySelectorAll('#page-wallet .tabs .tab').forEach(t => t.classList.remove('active'));
+  document.getElementById('wallet-tab-' + tab).classList.add('active');
+}
+
+function selectRechargeMethod(method, el) {
+  selectedRechargeMethod = method;
+  document.querySelectorAll('.method-card').forEach(c => c.classList.remove('selected'));
+  el.classList.add('selected');
+
+  const info = PAYMENT_INFO[method];
+  if (!info) return;
+
+  document.getElementById('manual-details-card').innerHTML = info.fields.map(f => `
+    <div class="detail-row">
+      <span class="detail-label">${f.name}</span>
+      <div style="display:flex;align-items:center;min-width:0;">
+        <span class="detail-value">${f.value}</span>
+        <button class="copy-btn" onclick="copyText('${esc(f.value)}')">Copy</button>
+      </div>
+    </div>
+  `).join('');
+
+  show('manual-details');
+  tg?.HapticFeedback?.selectionChanged?.();
+}
+
+async function submitRecharge() {
+  if (!selectedRechargeMethod) { showToast('❌ Select a payment method first'); return; }
+  const amount = parseFloat(document.getElementById('manual-amount').value);
+  const txid   = document.getElementById('manual-txid').value.trim();
+  const proof  = document.getElementById('manual-screenshot').value.trim();
+
+  if (!amount || amount < 1) { showToast('❌ Enter a valid amount'); return; }
+  if (!txid) { showToast('❌ Enter your transaction ID'); return; }
+
+  const btn = document.getElementById('manual-submit-btn');
+  btn.disabled = true; btn.textContent = '⏳ Submitting…';
+  try {
+    await api('/recharge', 'POST', {
+      amountUsd: amount,
+      txid,
+      proofUrl:  proof || undefined,
+      method:    selectedRechargeMethod,
+    });
+    showToast('✅ Request submitted! We\'ll review within 24h.');
+    tg?.HapticFeedback?.notificationOccurred?.('success');
+    document.getElementById('manual-amount').value     = '';
+    document.getElementById('manual-txid').value       = '';
+    document.getElementById('manual-screenshot').value = '';
+    selectedRechargeMethod = null;
+    document.querySelectorAll('.method-card').forEach(c => c.classList.remove('selected'));
+    hide('manual-details');
+  } catch (e) {
+    showToast('❌ ' + e.message);
+    tg?.HapticFeedback?.notificationOccurred?.('error');
+  } finally {
+    btn.disabled = false; btn.textContent = '📨 Submit Recharge Request';
+  }
 }
 </script>
 </body>

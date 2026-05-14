@@ -1774,11 +1774,16 @@ async function bootstrap() {
   const publicDir  = path.join(__dirname, 'public');
   const htmlSource = path.join(publicDir, 'index.html');
 
-  // Serve index.html with BACKEND_URL injected at request time
+  // Serve index.html with runtime template variables injected
   expressApp.get('/app', (_req, res) => {
     try {
       let html = fs.readFileSync(htmlSource, 'utf8');
-      html = html.replace(/__BACKEND_URL__/g, BACKEND_URL || 'http://localhost:3001');
+      html = html.replace(/__BACKEND_URL__/g,   BACKEND_URL || 'http://localhost:3001');
+      html = html.replace(/__BOT_USERNAME__/g,  botUsername);
+      html = html.replace(/__BINANCE_ID__/g,    process.env.PAYMENT_BINANCE_ID    || '');
+      html = html.replace(/__USDT_ADDRESS__/g,  process.env.PAYMENT_USDT_ADDRESS  || '');
+      html = html.replace(/__IBAN__/g,          process.env.PAYMENT_IBAN          || '');
+      html = html.replace(/__CIH_BANK__/g,      process.env.PAYMENT_CIH_BANK      || '');
       res.type('html').send(html);
     } catch { res.status(500).send('App unavailable'); }
   });
