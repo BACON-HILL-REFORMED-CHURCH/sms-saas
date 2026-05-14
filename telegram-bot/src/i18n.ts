@@ -8,7 +8,7 @@ const translations: Record<Lang, Record<string, string>> = {
 
     // ── Welcome ──
     welcome:
-      '🎉 *Welcome to SMS Shop!*\n\n' +
+      '🎉 *Welcome to {shop}!*\n\n' +
       '📲 Buy virtual phone numbers to verify any app.\n' +
       '📡 eSIM data plans for travelers.\n' +
       '🛒 Digital accounts — Email, Social, Streaming & more.\n' +
@@ -143,7 +143,7 @@ const translations: Record<Lang, Record<string, string>> = {
     select_language: '🌐 *اختر لغتك:*',
 
     welcome:
-      '🎉 *مرحبًا بك في SMS Shop!*\n\n' +
+      '🎉 *مرحبًا بك في {shop}!*\n\n' +
       '📲 اشترِ أرقام هواتف افتراضية للتحقق من أي تطبيق.\n' +
       '📡 باقات بيانات eSIM للمسافرين.\n' +
       '🛒 حسابات رقمية — إيميل، سوشيال ميديا، ستريمينغ والمزيد.\n' +
@@ -258,7 +258,7 @@ const translations: Record<Lang, Record<string, string>> = {
     select_language: '🌐 *Choisissez votre langue:*',
 
     welcome:
-      '🎉 *Bienvenue sur SMS Shop!*\n\n' +
+      '🎉 *Bienvenue sur {shop}!*\n\n' +
       '📲 Achetez des numéros virtuels pour vérifier n\'importe quelle app.\n' +
       '📡 Forfaits eSIM pour voyageurs.\n' +
       '🛒 Comptes digitaux — Email, Réseaux sociaux, Streaming & plus.\n' +
@@ -373,7 +373,7 @@ const translations: Record<Lang, Record<string, string>> = {
     select_language: '🌐 *Pilih bahasa Anda:*',
 
     welcome:
-      '🎉 *Selamat datang di SMS Shop!*\n\n' +
+      '🎉 *Selamat datang di {shop}!*\n\n' +
       '📲 Beli nomor telepon virtual untuk verifikasi aplikasi apa pun.\n' +
       '📡 Paket data eSIM untuk wisatawan.\n' +
       '🛒 Akun digital — Email, Sosmed, Streaming & lainnya.\n' +

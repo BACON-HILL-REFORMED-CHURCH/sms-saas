@@ -93,6 +93,7 @@ async function runBroadcast(message: string, photoUrl?: string) {
 function getLang(chatId: number): string { return userLang.get(chatId) ?? 'en'; }
 
 let botAdminToken: string | null  = null;
+let adminChatId:   number | null  = null;
 let botUsername                   = 'smsshopbot';
 let countryCache: SMSCountry[]    = [];
 let serviceCache: SMSService[]    = [];
@@ -374,7 +375,7 @@ bot.telegram.getMe().then((me) => { botUsername = me.username ?? botUsername; })
 async function showAuthMenu(ctx: any) {
   const chatId  = ctx.chat?.id ?? ctx.chat!.id;
   const lang    = getLang(chatId);
-  const caption = t(lang, 'welcome');
+  const caption = t(lang, 'welcome', { shop: SHOP_NAME });
   const keyboard = Markup.inlineKeyboard([
     [Markup.button.callback(t(lang, 'btn_login'),    'do_login')],
     [Markup.button.callback(t(lang, 'btn_register'), 'do_register')],
@@ -2050,6 +2051,7 @@ async function showAdminRecharges(ctx: any) {
 }
 
 bot.command('admin',   (ctx) => showAdminRecharges(ctx));
+bot.action('adm_review', async (ctx) => { await ctx.answerCbQuery(); await showAdminRecharges(ctx); });
 
 // ── Extra slash commands (shown in bot menu) ──────────────────
 bot.command('balance', async (ctx) => {
@@ -2164,7 +2166,7 @@ bot.on('text', async (ctx) => {
         try { const me = await makeApi(result.accessToken).get('/auth/me'); userId = unwrap(me)?.id ?? ''; } catch {}
       }
       sessions.set(chatId, { token:result.accessToken, email:data.email, role, userId });
-      if (role === 'ADMIN') botAdminToken = result.accessToken;
+      if (role === 'ADMIN') { botAdminToken = result.accessToken; adminChatId = chatId; }
       // Link Telegram ID to this account so Mini App uses same wallet
       const tgId = String(ctx.from?.id ?? '');
       if (tgId) {
@@ -2183,6 +2185,28 @@ bot.on('text', async (ctx) => {
     try {
       await makeApi().post('/auth/register', { email:data.email, password:text });
       await ctx.reply(t(lang, 'register_success'), { parse_mode:'Markdown' });
+
+      // Credit referral bonus to whoever shared the link
+      const referrerId = referrals.get(chatId);
+      if (referrerId && !referred.has(chatId) && botAdminToken) {
+        const referrerSession = sessions.get(referrerId);
+        if (referrerSession) {
+          try {
+            await makeApi(botAdminToken).post('/admin/balance/adjust', {
+              userId: referrerSession.userId,
+              amount: REFERRAL_BONUS,
+              reason: `Referral bonus — ${data.email} registered`,
+            });
+            referred.add(chatId);
+            await bot.telegram.sendMessage(referrerId,
+              `🎉 *Referral Bonus!*\n\n` +
+              `Your friend joined ${SHOP_NAME}!\n` +
+              `💰 *+${REFERRAL_BONUS} credits* added to your balance! 🎁`,
+              { parse_mode: 'Markdown' },
+            );
+          } catch (e) { console.error('Referral bonus failed:', errMsg(e)); }
+        }
+      }
     } catch (err) { await ctx.reply(t(lang, 'register_error', { msg: errMsg(err) }), { parse_mode:'Markdown' }); }
     return;
   }
@@ -2462,6 +2486,25 @@ bot.on('text', async (ctx) => {
         }),
         { parse_mode: 'Markdown', ...getKeyboard(chatId, session.role) }
       );
+
+      // Notify admin
+      const notifyIds = adminChatId ? [adminChatId] : ADMIN_TG_IDS;
+      for (const adminId of notifyIds) {
+        try {
+          await bot.telegram.sendMessage(
+            adminId,
+            `💳 *New Recharge Request!*\n\n` +
+            `👤 *${session.email}*\n` +
+            `🏦 Method: ${methodDisplay[data.method] || data.method}\n` +
+            `💰 Amount: *$${data.amount} USD*\n` +
+            `🔖 TxID: \`${text}\``,
+            {
+              parse_mode: 'Markdown',
+              ...Markup.inlineKeyboard([[Markup.button.callback('📋 Review Recharges', 'adm_review')]]),
+            },
+          );
+        } catch {}
+      }
     } catch (err: any) {
       const msg = err?.response?.data?.message || err.message || 'Unknown error';
       await ctx.reply(`❌ Error: ${msg}`, getKeyboard(chatId, session.role));
