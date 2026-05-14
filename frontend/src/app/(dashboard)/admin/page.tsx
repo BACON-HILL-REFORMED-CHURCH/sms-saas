@@ -24,7 +24,7 @@ interface AdminUser {
   _count: { orders: number };
 }
 
-type Tab = 'stats' | 'users' | 'pricing' | 'logs' | 'esim';
+type Tab = 'stats' | 'users' | 'recharges' | 'pricing' | 'logs' | 'esim';
 
 // ── Stat Card ──────────────────────────────────────────────
 function StatCard({ label, value, icon }: { label: string; value: string | number; icon: string }) {
@@ -42,6 +42,12 @@ function StatCard({ label, value, icon }: { label: string; value: string | numbe
 // ── Main Component ─────────────────────────────────────────
 export default function AdminPage() {
   const [tab, setTab]           = useState<Tab>('stats');
+
+  // Recharges state
+  const [recharges, setRecharges]         = useState<any[]>([]);
+  const [rechargeStatus, setRechargeStatus] = useState('PENDING');
+  const [reviewNotes, setReviewNotes]     = useState<Record<string, string>>({});
+  const [reviewing, setReviewing]         = useState<string | null>(null);
   const [stats, setStats]       = useState<Stats | null>(null);
   const [users, setUsers]       = useState<AdminUser[]>([]);
   const [search, setSearch]     = useState('');
@@ -69,6 +75,36 @@ export default function AdminPage() {
     fetchPricing();
     fetchEsimProducts();
   }, []);
+
+  useEffect(() => {
+    if (tab === 'recharges') fetchRecharges(rechargeStatus);
+  // eslint-disable-next-line react-hooks/exhaustive-deps
+  }, [tab, rechargeStatus]);
+
+  async function fetchRecharges(status: string) {
+    try {
+      const qs = status ? `?status=${status}` : '';
+      const r = await api.get(`/recharge/admin${qs}`);
+      setRecharges(Array.isArray(r.data) ? r.data : []);
+    } catch {}
+  }
+
+  async function handleReview(id: string, action: 'APPROVED' | 'REJECTED') {
+    setReviewing(id);
+    try {
+      await api.patch(`/recharge/admin/${id}/review`, {
+        status:    action,
+        adminNote: reviewNotes[id] || undefined,
+      });
+      await fetchRecharges(rechargeStatus);
+      await fetchStats();
+      setReviewNotes((n) => { const copy = { ...n }; delete copy[id]; return copy; });
+    } catch (err: any) {
+      alert(err.response?.data?.message ?? 'Review failed');
+    } finally {
+      setReviewing(null);
+    }
+  }
 
   async function fetchStats() {
     try { const r = await api.get('/admin/stats'); setStats(r.data); } catch {}
@@ -176,11 +212,12 @@ export default function AdminPage() {
   }
 
   const TABS: { key: Tab; label: string; icon: string }[] = [
-    { key: 'stats',   label: 'Stats',   icon: '📊' },
-    { key: 'users',   label: 'Users',   icon: '👥' },
-    { key: 'esim',    label: 'eSIM',    icon: '📡' },
-    { key: 'pricing', label: 'Pricing', icon: '💲' },
-    { key: 'logs',    label: 'Logs',    icon: '📋' },
+    { key: 'stats',     label: 'Stats',     icon: '📊' },
+    { key: 'users',     label: 'Users',     icon: '👥' },
+    { key: 'recharges', label: 'Recharges', icon: '💳' },
+    { key: 'esim',      label: 'eSIM',      icon: '📡' },
+    { key: 'pricing',   label: 'Pricing',   icon: '💲' },
+    { key: 'logs',      label: 'Logs',      icon: '📋' },
   ];
 
   return (
@@ -333,6 +370,130 @@ export default function AdminPage() {
             {pricing.length === 0 && (
               <p className="text-slate-500 text-sm text-center py-6">No custom pricing set</p>
             )}
+          </div>
+        </div>
+      )}
+
+      {/* ── Recharges tab ─────────────────────────────────── */}
+      {tab === 'recharges' && (
+        <div className="space-y-4">
+          {/* Filter */}
+          <div className="flex gap-2">
+            {['PENDING', 'APPROVED', 'REJECTED', ''].map((s) => (
+              <button
+                key={s || 'ALL'}
+                onClick={() => setRechargeStatus(s)}
+                className={`px-3 py-1.5 rounded-lg text-xs font-medium transition-colors ${
+                  rechargeStatus === s
+                    ? 'bg-primary-600 text-white'
+                    : 'bg-surface-card border border-surface-border text-slate-400 hover:text-slate-200'
+                }`}
+              >
+                {s || 'ALL'}
+              </button>
+            ))}
+            <button
+              onClick={() => fetchRecharges(rechargeStatus)}
+              className="ml-auto text-xs text-slate-400 hover:text-slate-200 border border-surface-border px-3 py-1.5 rounded-lg"
+            >
+              🔄 Refresh
+            </button>
+          </div>
+
+          {/* List */}
+          <div className="space-y-3">
+            {recharges.length === 0 ? (
+              <div className="card text-center py-12 text-slate-500">No requests found</div>
+            ) : recharges.map((r: any) => (
+              <div key={r.id} className="card space-y-3">
+                {/* Header row */}
+                <div className="flex items-start justify-between gap-3">
+                  <div>
+                    <div className="flex items-center gap-2 flex-wrap">
+                      <span className="text-lg font-bold text-slate-100">
+                        ${(r.amountUsd ?? r.amount / 100).toFixed(2)}
+                      </span>
+                      <span className={
+                        r.status === 'PENDING'  ? 'badge-pending'  :
+                        r.status === 'APPROVED' ? 'badge-received' : 'badge-canceled'
+                      }>
+                        {r.status}
+                      </span>
+                      <span className="text-xs bg-surface border border-surface-border px-2 py-0.5 rounded-full text-slate-400">
+                        {r.method}
+                      </span>
+                    </div>
+                    <p className="text-slate-400 text-sm mt-1">
+                      {r.user?.email ?? r.user?.displayName ?? 'Unknown user'}
+                      {r.user?.telegramId && (
+                        <span className="text-slate-500 ml-1">· TG: {r.user.telegramId}</span>
+                      )}
+                    </p>
+                    <p className="text-slate-500 text-xs mt-0.5">
+                      {new Date(r.createdAt).toLocaleString()}
+                    </p>
+                  </div>
+                </div>
+
+                {/* Details */}
+                <div className="grid grid-cols-1 sm:grid-cols-2 gap-2 text-xs">
+                  {r.txid && (
+                    <div className="bg-surface border border-surface-border rounded-lg px-3 py-2">
+                      <span className="text-slate-500">TxID: </span>
+                      <span className="font-mono text-slate-300 break-all">{r.txid}</span>
+                    </div>
+                  )}
+                  {r.screenshot && (
+                    <div className="bg-surface border border-surface-border rounded-lg px-3 py-2">
+                      <a
+                        href={r.screenshot}
+                        target="_blank"
+                        rel="noopener noreferrer"
+                        className="text-primary-400 hover:underline"
+                      >
+                        📎 View Proof
+                      </a>
+                    </div>
+                  )}
+                  {r.adminNote && (
+                    <div className="bg-surface border border-surface-border rounded-lg px-3 py-2 sm:col-span-2">
+                      <span className="text-slate-500">Admin note: </span>
+                      <span className="text-slate-300">{r.adminNote}</span>
+                    </div>
+                  )}
+                </div>
+
+                {/* Review panel — only for PENDING */}
+                {r.status === 'PENDING' && (
+                  <div className="pt-3 border-t border-surface-border space-y-3">
+                    <input
+                      value={reviewNotes[r.id] ?? ''}
+                      onChange={(e) => setReviewNotes((n) => ({ ...n, [r.id]: e.target.value }))}
+                      placeholder="Admin note (optional)"
+                      className="input-field text-sm"
+                    />
+                    <div className="flex gap-3">
+                      <button
+                        onClick={() => handleReview(r.id, 'APPROVED')}
+                        disabled={reviewing === r.id}
+                        className="flex-1 bg-green-600 hover:bg-green-700 text-white font-medium
+                                   py-2 rounded-lg text-sm transition-colors disabled:opacity-40"
+                      >
+                        {reviewing === r.id ? '⏳' : '✅ Approve'}
+                      </button>
+                      <button
+                        onClick={() => handleReview(r.id, 'REJECTED')}
+                        disabled={reviewing === r.id}
+                        className="flex-1 bg-red-600 hover:bg-red-700 text-white font-medium
+                                   py-2 rounded-lg text-sm transition-colors disabled:opacity-40"
+                      >
+                        {reviewing === r.id ? '⏳' : '❌ Reject'}
+                      </button>
+                    </div>
+                  </div>
+                )}
+              </div>
+            ))}
           </div>
         </div>
       )}
