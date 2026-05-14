@@ -37,9 +37,12 @@ interface SMSLocalOrder {
   service:     string;
   country:     string;
   credits:     number;
+  chatId:      number;
+  userId:      string;
   status:      'pending' | 'received' | 'canceled' | 'expired';
   smsCode?:    string;
   smsText?:    string;
+  charged:     boolean;
 }
 
 interface SMSCountry { ID: string; name: string; short_name: string; }
@@ -75,8 +78,22 @@ function unwrap(res: any): any {
   return res.data?.success === true && 'data' in res.data ? res.data.data : res.data;
 }
 function errMsg(err: any): string {
-  const msg = err?.response?.data?.message;
-  return Array.isArray(msg) ? msg.join(', ') : typeof msg === 'string' ? msg : (err?.message ?? 'Unknown error');
+  const data = err?.response?.data;
+  if (data) {
+    const msg = data.message ?? data.error ?? data.info ?? data.msg;
+    if (Array.isArray(msg))          return msg.join(', ');
+    if (typeof msg === 'string')     return msg;
+    if (typeof data === 'string')    return data;
+    return JSON.stringify(data);
+  }
+  return err?.message ?? 'Unknown error';
+}
+
+function logApiError(label: string, err: any) {
+  console.error(
+    `[${label}] status=${err?.response?.status ?? 'N/A'}`,
+    `body=`, err?.response?.data ?? err?.message,
+  );
 }
 
 // ── SMSPool API helper ────────────────────────────────────────
@@ -626,8 +643,11 @@ bot.action(/^ssms_(\d+)_(\d+)$/, async (ctx) => {
     // Fetch price from SMSPool
     const priceRes = await smsPost('/request/price', { country: countryId, service: serviceId });
     const priceData = priceRes.data;
+    console.log('[ssms] SMSPool price response:', JSON.stringify(priceData));
 
     if (!priceData || priceData.success === 0) {
+      const reason = priceData?.message ?? priceData?.error ?? JSON.stringify(priceData) ?? 'unavailable';
+      console.error(`[ssms] Price check failed for country=${countryId} service=${serviceId}:`, reason);
       await ctx.reply(`❌ No numbers available for ${service.name} in ${country.name} right now. Try another country!`);
       return;
     }
@@ -654,7 +674,10 @@ bot.action(/^ssms_(\d+)_(\d+)$/, async (ctx) => {
         ]),
       },
     );
-  } catch (err) { await ctx.reply(`❌ ${errMsg(err)}`); }
+  } catch (err: any) {
+    logApiError('ssms price', err);
+    await ctx.reply(`❌ ${errMsg(err)}`);
+  }
 });
 
 // Confirmed — purchase from SMSPool
@@ -687,45 +710,38 @@ bot.action(/^cbuy_(\d+)_(\d+)_(\d+)$/, async (ctx) => {
       pricing_option: '1', // highest success rate
     });
     const purchase = purchaseRes.data;
+    console.log('[cbuy] SMSPool response:', JSON.stringify(purchase));
 
     if (!purchase || purchase.success === 0 || purchase.success === '0') {
-      await ctx.reply(`❌ Purchase failed: ${purchase?.message ?? 'No numbers available. Try again.'}`);
+      const reason = purchase?.message ?? purchase?.error ?? JSON.stringify(purchase) ?? 'No numbers available.';
+      console.error(`[cbuy] Purchase failed for country=${countryId} service=${serviceId}:`, reason);
+      await ctx.reply(`❌ Purchase failed: ${reason}`);
       return;
     }
 
     const orderId     = purchase.order_code ?? purchase.orderid ?? String(purchase.number);
     const phoneNumber = purchase.phonenumber ?? purchase.number ?? 'N/A';
 
-    // 3. Deduct credits from user wallet
-    if (botAdminToken) {
-      try {
-        await makeApi(botAdminToken).post('/admin/balance/adjust', {
-          userId: session.userId,
-          amount: -credits,
-          reason: `SMS order: ${service?.name} (${country?.name})`,
-        });
-      } catch (e) { console.error('Balance deduct failed:', errMsg(e)); }
-    }
-
-    // 4. Store order locally
+    // 3. Store order locally — balance deducted only after SMS arrives
     const order: SMSLocalOrder = {
       orderId, phoneNumber,
       service: service?.name ?? serviceId,
       country: country?.name ?? countryId,
-      credits, status: 'pending',
+      credits, chatId, userId: session.userId,
+      status: 'pending', charged: false,
     };
     smsOrders.set(orderId, order);
     const existing = userOrders.get(chatId) ?? [];
     userOrders.set(chatId, [orderId, ...existing].slice(0, 10));
 
-    // 5. Reply + auto-poll
+    // 4. Reply immediately with the number
     await ctx.reply(
       `✅ *Number Assigned!*\n\n` +
       `📱 Number: \`${phoneNumber}\`\n` +
       `📲 Service: ${service?.name ?? serviceId}\n` +
       `🌍 Country: ${flag(country?.short_name ?? '')} ${country?.name ?? countryId}\n` +
-      `💰 Charged: ${credits} credits\n\n` +
-      `🔔 *I'll notify you automatically when the SMS arrives!*\n_(checking every 30 seconds)_`,
+      `💳 Cost: ${credits} credits _(charged on SMS receipt)_\n\n` +
+      `🔔 *Waiting for SMS — I'll notify you instantly!*\n_(checking every 5 seconds, up to 17 min)_`,
       {
         parse_mode: 'Markdown',
         ...Markup.inlineKeyboard([[
@@ -738,51 +754,91 @@ bot.action(/^cbuy_(\d+)_(\d+)_(\d+)$/, async (ctx) => {
     startAutoPolling(chatId, orderId, session);
     await rewardReferrer(chatId, session);
 
-  } catch (err) { await ctx.reply(`❌ ${errMsg(err)}`); }
+  } catch (err: any) {
+    logApiError('cbuy', err);
+    await ctx.reply(`❌ Order failed: ${errMsg(err)}`);
+  }
 });
 
 // ════════════════════════════════════════════════════════════════
 // AUTO SMS POLLING — via SMSPool check
 // ════════════════════════════════════════════════════════════════
+const POLL_INTERVAL_MS = 5_000;   // 5 seconds
+const POLL_MAX_ATTEMPTS = 204;    // 204 × 5s = 1020 seconds (~17 min)
+
+async function chargeForSms(order: SMSLocalOrder): Promise<void> {
+  if (order.charged || !botAdminToken) return;
+  order.charged = true;
+  try {
+    await makeApi(botAdminToken).post('/admin/balance/adjust', {
+      userId: order.userId,
+      amount: -order.credits,
+      reason: `SMS order: ${order.service} (${order.phoneNumber})`,
+    });
+  } catch (e) {
+    console.error('[charge] Balance deduct failed:', errMsg(e));
+    order.charged = false; // allow retry
+  }
+}
+
 function startAutoPolling(chatId: number, orderId: string, session: UserSession) {
   if (activePolls.has(orderId)) return;
   let attempts = 0;
 
   const t = setInterval(async () => {
     attempts++;
-    if (attempts > POLL_MAX) {
+    if (attempts > POLL_MAX_ATTEMPTS) {
       clearInterval(t); activePolls.delete(orderId);
       const order = smsOrders.get(orderId);
       if (order) order.status = 'expired';
-      try { await bot.telegram.sendMessage(chatId, `⏰ *Order Timed Out*\n\nNo SMS received after 10 minutes.\n📱 Number: \`${smsOrders.get(orderId)?.phoneNumber}\``, { parse_mode:'Markdown' }); } catch {}
+      try {
+        await bot.telegram.sendMessage(chatId,
+          `⏰ *Order Timed Out*\n\nNo SMS received after 17 minutes.\n📱 Number: \`${smsOrders.get(orderId)?.phoneNumber}\`\n_No charge applied._`,
+          { parse_mode: 'Markdown' });
+      } catch {}
       return;
     }
+
     try {
       const res  = await smsPost('/sms/check', { orderid: orderId });
       const data = res.data;
-      // status: 1=waiting, 2=received, 3=expired
-      if (data.sms && data.sms.length > 0) {
+
+      // Detect SMS received — handle both array and flat response formats
+      const smsArr  = Array.isArray(data.sms) ? data.sms : null;
+      const hasCode = smsArr ? smsArr.length > 0 : (data.status === 3 && (data.sms || data.full_sms || data.code));
+      if (hasCode) {
         clearInterval(t); activePolls.delete(orderId);
-        const smsItem = data.sms[0];
-        const code    = smsItem.code ?? smsItem.sms;
-        const full    = smsItem.full_code ?? smsItem.sms ?? code;
+        const smsItem = smsArr ? smsArr[0] : data;
+        const code    = smsItem.code ?? smsItem.sms ?? data.code ?? '';
+        const full    = smsItem.full_code ?? smsItem.full_sms ?? smsItem.sms ?? code;
         const order   = smsOrders.get(orderId);
         if (order) { order.status = 'received'; order.smsCode = code; order.smsText = full; }
+
+        // Deduct balance now that SMS is confirmed
+        if (order) await chargeForSms(order);
+
         await bot.telegram.sendMessage(chatId,
           `🎉 *SMS Received!*\n\n` +
           `📱 Number: \`${order?.phoneNumber}\`\n` +
-          `🔐 Code: \`${code}\`\n\n` +
-          `📄 _${full}_`,
-          { parse_mode:'Markdown' },
+          `🔐 Code: \`${code}\`\n` +
+          `📄 _${full}_\n\n` +
+          `💳 *${order?.credits} credits deducted.*`,
+          { parse_mode: 'Markdown' },
         );
-      } else if (data.status === 3 || data.status === 'expired') {
+        return;
+      }
+
+      // Expired on SMSPool side
+      if (data.status === 2 || data.status === 'expired') {
         clearInterval(t); activePolls.delete(orderId);
         const order = smsOrders.get(orderId);
         if (order) order.status = 'expired';
-        await bot.telegram.sendMessage(chatId, `⏰ Order expired. No SMS received.`);
+        await bot.telegram.sendMessage(chatId, `⏰ Order expired on provider side. No SMS received. _No charge applied._`, { parse_mode: 'Markdown' });
       }
-    } catch {}
-  }, POLL_INTERVAL);
+    } catch (e) {
+      console.error(`[poll] check failed for ${orderId}:`, errMsg(e));
+    }
+  }, POLL_INTERVAL_MS);
 
   activePolls.set(orderId, t);
 }
@@ -798,15 +854,22 @@ bot.action(/^poll_(.+)$/, async (ctx) => {
   try {
     const res  = await smsPost('/sms/check', { orderid: orderId });
     const data = res.data;
-    if (data.sms && data.sms.length > 0) {
-      const smsItem = data.sms[0];
-      const code    = smsItem.code ?? smsItem.sms;
-      const full    = smsItem.full_code ?? smsItem.sms ?? code;
-      await ctx.reply(`✅ *SMS Received!*\n\n🔐 Code: \`${code}\`\n\n📄 _${full}_`, { parse_mode:'Markdown' });
-    } else if (data.status === 3 || data.status === 'expired') {
+    const smsArr  = Array.isArray(data.sms) ? data.sms : null;
+    const hasCode = smsArr ? smsArr.length > 0 : (data.status === 3 && (data.sms || data.full_sms || data.code));
+    if (hasCode) {
+      const smsItem = smsArr ? smsArr[0] : data;
+      const code    = smsItem.code ?? smsItem.sms ?? data.code ?? '';
+      const full    = smsItem.full_code ?? smsItem.full_sms ?? smsItem.sms ?? code;
+      const order   = smsOrders.get(orderId);
+      if (order && order.status !== 'received') {
+        order.status = 'received'; order.smsCode = code; order.smsText = full;
+        await chargeForSms(order);
+      }
+      await ctx.reply(`✅ *SMS Received!*\n\n🔐 Code: \`${code}\`\n📄 _${full}_\n\n💳 *${order?.credits ?? '?'} credits deducted.*`, { parse_mode: 'Markdown' });
+    } else if (data.status === 2 || data.status === 'expired') {
       await ctx.reply('⏰ This order has expired.');
     } else {
-      await ctx.reply('⏳ No SMS yet. I\'m auto-checking every 30 seconds!',
+      await ctx.reply('⏳ No SMS yet — auto-checking every 5 seconds!',
         Markup.inlineKeyboard([[Markup.button.callback('🔄 Check Again', `poll_${orderId}`)]]));
       startAutoPolling(chatId, orderId, session);
     }
@@ -829,19 +892,8 @@ bot.action(/^cancel_(.+)$/, async (ctx) => {
     const order = smsOrders.get(orderId);
     if (order) order.status = 'canceled';
 
-    // Refund credits
-    if (botAdminToken && order && session.userId) {
-      try {
-        await makeApi(botAdminToken).post('/admin/balance/adjust', {
-          userId: session.userId,
-          amount: order.credits,
-          reason: `Refund: canceled SMS order`,
-        });
-        await ctx.reply(`✅ Order canceled.\n💰 *${order.credits} credits refunded* to your balance.`, { parse_mode:'Markdown' });
-      } catch { await ctx.reply('✅ Order canceled on SMSPool. Contact admin for refund.'); }
-    } else {
-      await ctx.reply('✅ Order canceled.');
-    }
+    // No refund needed — balance is only charged after SMS is received
+    await ctx.reply('✅ Order canceled. No charge was applied.');
   } catch (err) { await ctx.reply(`❌ ${errMsg(err)}`); }
 });
 
