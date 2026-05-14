@@ -332,6 +332,35 @@
       cursor: pointer; margin-left: 8px; flex-shrink: 0; font-weight: 600;
     }
 
+    /* ── Admin review cards ── */
+    .admin-card {
+      background: var(--card); border: 1px solid var(--border);
+      border-radius: var(--radius); margin-bottom: 10px; overflow: hidden;
+    }
+    .admin-card-body { padding: 14px; }
+    .admin-card-user { font-size: 12px; color: var(--hint); margin-bottom: 6px;
+      display: flex; align-items: center; gap: 6px; }
+    .admin-card-amount { font-size: 22px; font-weight: 800; }
+    .admin-card-meta {
+      display: flex; flex-wrap: wrap; gap: 8px;
+      font-size: 12px; color: var(--hint); margin-top: 8px;
+    }
+    .admin-card-meta span { background: var(--bg2); border-radius: 6px; padding: 3px 8px; }
+    .admin-card-actions { display: flex; gap: 8px; margin-top: 12px; }
+    .admin-review-panel {
+      border-top: 1px solid var(--border); padding: 12px 14px;
+      background: var(--bg2); display: none;
+    }
+    .admin-review-panel.open { display: block; }
+    /* Pending badge on nav item */
+    .nav-item { position: relative; }
+    .nav-badge {
+      position: absolute; top: 2px; right: calc(50% - 18px);
+      background: var(--red); color: #fff; border-radius: 10px;
+      font-size: 10px; font-weight: 700; padding: 1px 5px;
+      min-width: 16px; text-align: center; line-height: 16px;
+    }
+
     /* ── Recharge history ── */
     .recharge-item {
       background: var(--card); border: 1px solid var(--border);
@@ -600,6 +629,17 @@
         <div class="empty"><div class="icon">📋</div><div>No orders yet</div></div>
       </div>
     </div>
+
+    <!-- ADMIN -->
+    <div class="page" id="page-admin">
+      <div class="tabs" style="margin-bottom:14px;">
+        <div class="tab active" id="admin-tab-pending" onclick="switchAdminTab('PENDING',this)">⏳ Pending</div>
+        <div class="tab" id="admin-tab-all"     onclick="switchAdminTab('',this)">📋 All</div>
+      </div>
+      <div id="admin-list">
+        <div class="empty"><div class="icon">⚙️</div><div>No requests</div></div>
+      </div>
+    </div>
   </div><!-- /content -->
 
   <!-- Bottom Nav -->
@@ -623,6 +663,11 @@
     <div class="nav-item" onclick="goTab('orders')" id="nav-orders">
       <span class="nav-icon">📋</span>
       <span class="nav-label">Orders</span>
+    </div>
+    <!-- Admin nav — hidden until role=ADMIN confirmed -->
+    <div class="nav-item" onclick="goTab('admin')" id="nav-admin" style="display:none;">
+      <span class="nav-icon">⚙️</span>
+      <span class="nav-label">Admin</span>
     </div>
   </div>
 </div><!-- /app -->
@@ -682,6 +727,10 @@ let selectedRechargeMethod = null;
     await login();
     await loadBalance();
     await loadHomeTxns();
+    if (USER?.role === 'ADMIN') {
+      show('nav-admin');
+      loadAdminPendingBadge();
+    }
     hide('loader');
   } catch (e) {
     const msg = e.message || 'Login failed';
@@ -736,6 +785,7 @@ function goTab(tab) {
   if (tab === 'sms')    loadSmsCountries();
   if (tab === 'esim')   loadEsimProducts();
   if (tab === 'orders') loadOrders();
+  if (tab === 'admin')  loadAdminRecharges('PENDING');
 }
 
 // ────────────────────────────────────────────────
@@ -1354,6 +1404,151 @@ function selectRechargeMethod(method, el) {
 
   show('manual-details');
   tg?.HapticFeedback?.selectionChanged?.();
+}
+
+// ────────────────────────────────────────────────
+// Admin — recharge review
+// ────────────────────────────────────────────────
+let adminCurrentStatus = 'PENDING';
+
+async function loadAdminPendingBadge() {
+  try {
+    const rows = await api('/recharge/admin?status=PENDING');
+    const count = Array.isArray(rows) ? rows.length : 0;
+    const nav = document.getElementById('nav-admin');
+    const existing = nav.querySelector('.nav-badge');
+    if (existing) existing.remove();
+    if (count > 0) {
+      const badge = document.createElement('span');
+      badge.className = 'nav-badge';
+      badge.textContent = count > 99 ? '99+' : count;
+      nav.appendChild(badge);
+    }
+  } catch {}
+}
+
+async function loadAdminRecharges(status) {
+  adminCurrentStatus = status;
+  const el = document.getElementById('admin-list');
+  el.innerHTML = '<div class="empty"><div class="icon">⏳</div><div>Loading…</div></div>';
+  try {
+    const qs   = status ? `?status=${status}` : '';
+    const rows = await api('/recharge/admin' + qs);
+    const list = Array.isArray(rows) ? rows : [];
+    if (!list.length) {
+      el.innerHTML = `<div class="empty"><div class="icon">✅</div><div>No ${status ? status.toLowerCase() : ''} requests</div></div>`;
+      return;
+    }
+    el.innerHTML = list.map(r => adminReqCard(r)).join('');
+  } catch (e) {
+    el.innerHTML = `<div class="empty"><div>Failed to load: ${e.message}</div></div>`;
+  }
+}
+
+function switchAdminTab(status, el) {
+  document.querySelectorAll('#page-admin .tabs .tab').forEach(t => t.classList.remove('active'));
+  el.classList.add('active');
+  loadAdminRecharges(status);
+}
+
+function adminReqCard(r) {
+  const usd      = (r.amountUsd ?? r.amount / 100).toFixed(2);
+  const method   = { BINANCE:'🟡 Binance', USDT:'💚 USDT', IBAN:'🏦 IBAN', CIH:'🏛️ CIH' }[r.method] || r.method;
+  const user     = r.user?.displayName || r.user?.email || 'Unknown';
+  const tgId     = r.user?.telegramId ? `· TG: ${r.user.telegramId}` : '';
+  const date     = fmtDate(r.createdAt);
+  const statusBadgeHtml = `<span class="badge ${rechargeBadge(r.status)}">${r.status}</span>`;
+  const proof    = r.screenshot ? `<a href="${esc(r.screenshot)}" target="_blank" style="color:var(--link)">📎 Proof</a>` : '';
+  const txid     = r.txid ? `<span>TxID: ${r.txid.substring(0,20)}${r.txid.length > 20 ? '…' : ''}</span>` : '';
+  const noteHtml = r.adminNote ? `<div class="text-hint mt8">Note: ${r.adminNote}</div>` : '';
+
+  const actions = r.status === 'PENDING' ? `
+    <div class="admin-card-actions">
+      <button class="btn sm" style="background:var(--green);"
+        onclick="openReviewPanel('${r.id}','APPROVED')">✅ Approve</button>
+      <button class="btn sm danger"
+        onclick="openReviewPanel('${r.id}','REJECTED')">❌ Reject</button>
+    </div>` : '';
+
+  return `
+    <div class="admin-card" id="acard-${r.id}">
+      <div class="admin-card-body">
+        <div class="admin-card-user">👤 ${user} ${tgId}</div>
+        <div style="display:flex;justify-content:space-between;align-items:flex-end;">
+          <span class="admin-card-amount">$${usd}</span>
+          ${statusBadgeHtml}
+        </div>
+        <div class="admin-card-meta">
+          <span>${method}</span>
+          ${txid}
+          ${proof}
+          <span>${date}</span>
+        </div>
+        ${noteHtml}
+        ${actions}
+      </div>
+      <div class="admin-review-panel" id="apanel-${r.id}">
+        <div class="form-label" id="apanel-label-${r.id}" style="margin-bottom:8px;font-weight:600;"></div>
+        <div class="form-group" style="margin-bottom:10px;">
+          <label class="form-label">Admin Note (optional)</label>
+          <input type="text" class="form-input" id="anote-${r.id}" placeholder="Reason / confirmation…" />
+        </div>
+        <div class="btn-row">
+          <button class="btn sm" id="aconfirm-${r.id}" onclick="confirmReview('${r.id}')">Confirm</button>
+          <button class="btn outline sm" onclick="closeReviewPanel('${r.id}')">Cancel</button>
+        </div>
+      </div>
+    </div>`;
+}
+
+let pendingReviewAction = {};
+
+function openReviewPanel(id, action) {
+  closeAllReviewPanels();
+  pendingReviewAction[id] = action;
+  const panel  = document.getElementById(`apanel-${id}`);
+  const label  = document.getElementById(`apanel-label-${id}`);
+  const btn    = document.getElementById(`aconfirm-${id}`);
+  label.textContent = action === 'APPROVED' ? '✅ Confirm Approval' : '❌ Confirm Rejection';
+  btn.style.background = action === 'APPROVED' ? 'var(--green)' : 'var(--red)';
+  btn.textContent = action === 'APPROVED' ? 'Approve' : 'Reject';
+  panel.classList.add('open');
+  document.getElementById(`anote-${id}`)?.focus();
+  tg?.HapticFeedback?.impactOccurred?.('medium');
+}
+
+function closeReviewPanel(id) {
+  document.getElementById(`apanel-${id}`)?.classList.remove('open');
+  delete pendingReviewAction[id];
+}
+
+function closeAllReviewPanels() {
+  document.querySelectorAll('.admin-review-panel.open').forEach(p => p.classList.remove('open'));
+  pendingReviewAction = {};
+}
+
+async function confirmReview(id) {
+  const action = pendingReviewAction[id];
+  if (!action) return;
+  const note = document.getElementById(`anote-${id}`)?.value.trim();
+  const btn  = document.getElementById(`aconfirm-${id}`);
+  btn.disabled = true; btn.textContent = '⏳';
+  try {
+    await api(`/recharge/admin/${id}/review`, 'PATCH', {
+      status:    action,
+      adminNote: note || undefined,
+    });
+    showToast(action === 'APPROVED' ? '✅ Approved!' : '❌ Rejected');
+    tg?.HapticFeedback?.notificationOccurred?.('success');
+    // Refresh list and badge
+    await loadAdminRecharges(adminCurrentStatus);
+    loadAdminPendingBadge();
+  } catch (e) {
+    showToast('❌ ' + e.message);
+    tg?.HapticFeedback?.notificationOccurred?.('error');
+    btn.disabled = false;
+    btn.textContent = action === 'APPROVED' ? 'Approve' : 'Reject';
+  }
 }
 
 async function submitRecharge() {
