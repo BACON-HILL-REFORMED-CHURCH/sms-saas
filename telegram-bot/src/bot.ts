@@ -1,16 +1,43 @@
-import { Telegraf, session } from 'telegraf';
+import { Telegraf, session, Context } from 'telegraf';
+import { message } from 'telegraf/filters';
 import * as dotenv from 'dotenv';
 dotenv.config();
 
-import { mainKeyboard, adminKeyboard } from './keyboards/main.keyboard';
+import { mainKeyboard, adminKeyboard, cancelKeyboard, rechargeMethodKeyboard } from './keyboards/main.keyboard';
 import { loginUser, isAdmin } from './middleware/auth.middleware';
 import { walletApi, ordersApi, rechargeApi, adminApi } from './api/client';
 
-const bot = new Telegraf(process.env.TELEGRAM_BOT_TOKEN!);
+// ── Session types ──────────────────────────────────────────────────
+interface SessionData {
+  rechargeStep?: 'method' | 'amount' | 'txid';
+  rechargeMethod?: string;
+  rechargeAmount?: number;
+}
+
+interface BotContext extends Context {
+  session: SessionData;
+}
+
+const METHOD_LABEL: Record<string, string> = {
+  '💛 Binance ID': 'BINANCE',
+  '💚 USDT TRC20': 'USDT',
+  '🏦 IBAN': 'IBAN',
+  '🏧 CIH Bank': 'CIH',
+};
+
+const METHOD_DISPLAY: Record<string, string> = {
+  BINANCE: '💛 Binance ID',
+  USDT: '💚 USDT TRC20',
+  IBAN: '🏦 IBAN',
+  CIH: '🏧 CIH Bank',
+};
+
+// ── Bot setup ──────────────────────────────────────────────────────
+const bot = new Telegraf<BotContext>(process.env.TELEGRAM_BOT_TOKEN!);
 
 bot.use(session());
 
-// ── /start ─────────────────────────────────────────────
+// ── /start ─────────────────────────────────────────────────────────
 bot.start(async (ctx) => {
   const token = await loginUser(ctx);
   if (!token) {
@@ -29,14 +56,14 @@ bot.start(async (ctx) => {
   );
 });
 
-// ── 💰 Balance ─────────────────────────────────────────
+// ── 💰 Balance ─────────────────────────────────────────────────────
 bot.hears('💰 Balance', async (ctx) => {
   const token = await loginUser(ctx);
   if (!token) return ctx.reply('❌ Please restart: /start');
 
   try {
     const res = await walletApi.getBalance();
-    const { balance, balanceFormatted } = res.data;
+    const { balanceFormatted } = res.data;
     await ctx.reply(
       `💰 *Your Balance*\n\n` +
       `Amount: *${balanceFormatted}*\n\n` +
@@ -48,7 +75,7 @@ bot.hears('💰 Balance', async (ctx) => {
   }
 });
 
-// ── 📋 My Orders ───────────────────────────────────────
+// ── 📋 My Orders ───────────────────────────────────────────────────
 bot.hears('📋 My Orders', async (ctx) => {
   const token = await loginUser(ctx);
   if (!token) return ctx.reply('❌ Please restart: /start');
@@ -70,20 +97,44 @@ bot.hears('📋 My Orders', async (ctx) => {
   }
 });
 
-// ── 💳 Recharge ────────────────────────────────────────
-bot.hears('💳 Recharge', async (ctx) => {
+// ── 💳 Recharge / /recharge — start conversation flow ─────────────
+async function startRecharge(ctx: BotContext) {
+  ctx.session = { rechargeStep: 'method' };
   await ctx.reply(
-    `💳 *Recharge Methods*\n\n` +
-    `1️⃣ Binance ID\n` +
-    `2️⃣ USDT TRC20\n` +
-    `3️⃣ IBAN\n` +
-    `4️⃣ CIH Bank\n\n` +
-    `Send payment then use /recharge to submit request.`,
-    { parse_mode: 'Markdown' }
+    `💳 *Recharge Request*\n\n` +
+    `Select your payment method:`,
+    { parse_mode: 'Markdown', ...rechargeMethodKeyboard }
   );
+}
+
+bot.hears('💳 Recharge', (ctx) => startRecharge(ctx));
+bot.command('recharge', (ctx) => startRecharge(ctx));
+
+// ── Method selection ───────────────────────────────────────────────
+Object.keys(METHOD_LABEL).forEach((label) => {
+  bot.hears(label, async (ctx) => {
+    if (ctx.session?.rechargeStep !== 'method') {
+      return ctx.reply('Please use /recharge to start a recharge request.');
+    }
+    ctx.session.rechargeMethod = METHOD_LABEL[label];
+    ctx.session.rechargeStep = 'amount';
+    await ctx.reply(
+      `✅ Method: *${label}*\n\n` +
+      `Enter the amount in USD (e.g. 10):`,
+      { parse_mode: 'Markdown', ...cancelKeyboard }
+    );
+  });
 });
 
-// ── 👤 Profile ─────────────────────────────────────────
+// ── ❌ Cancel ──────────────────────────────────────────────────────
+bot.hears('❌ Cancel', async (ctx) => {
+  ctx.session = {};
+  const admin = isAdmin(ctx.from!.id);
+  const keyboard = admin ? adminKeyboard : mainKeyboard;
+  await ctx.reply('❌ Cancelled.', keyboard);
+});
+
+// ── 👤 Profile ─────────────────────────────────────────────────────
 bot.hears('👤 Profile', async (ctx) => {
   const name = ctx.from?.first_name || '';
   const username = ctx.from?.username ? `@${ctx.from.username}` : 'N/A';
@@ -98,7 +149,7 @@ bot.hears('👤 Profile', async (ctx) => {
   );
 });
 
-// ── 🎧 Support ─────────────────────────────────────────
+// ── 🎧 Support ─────────────────────────────────────────────────────
 bot.hears('🎧 Support', async (ctx) => {
   await ctx.reply(
     `🎧 *Support*\n\n` +
@@ -108,7 +159,7 @@ bot.hears('🎧 Support', async (ctx) => {
   );
 });
 
-// ── ⚙️ Admin Panel ─────────────────────────────────────
+// ── ⚙️ Admin Panel ─────────────────────────────────────────────────
 bot.hears('⚙️ Admin Panel', async (ctx) => {
   if (!isAdmin(ctx.from!.id)) return ctx.reply('❌ Unauthorized');
 
@@ -132,7 +183,7 @@ bot.hears('⚙️ Admin Panel', async (ctx) => {
   }
 });
 
-// ── /pending ───────────────────────────────────────────
+// ── /pending ───────────────────────────────────────────────────────
 bot.command('pending', async (ctx) => {
   if (!isAdmin(ctx.from!.id)) return ctx.reply('❌ Unauthorized');
   const token = await loginUser(ctx);
@@ -156,7 +207,7 @@ bot.command('pending', async (ctx) => {
   }
 });
 
-// ── /approve ───────────────────────────────────────────
+// ── /approve ───────────────────────────────────────────────────────
 bot.command('approve', async (ctx) => {
   if (!isAdmin(ctx.from!.id)) return ctx.reply('❌ Unauthorized');
   const token = await loginUser(ctx);
@@ -173,7 +224,7 @@ bot.command('approve', async (ctx) => {
   }
 });
 
-// ── /reject ────────────────────────────────────────────
+// ── /reject ────────────────────────────────────────────────────────
 bot.command('reject', async (ctx) => {
   if (!isAdmin(ctx.from!.id)) return ctx.reply('❌ Unauthorized');
   const token = await loginUser(ctx);
@@ -192,7 +243,69 @@ bot.command('reject', async (ctx) => {
   }
 });
 
-// ── Launch ─────────────────────────────────────────────
+// ── Free-text handler — recharge amount & txid steps ──────────────
+bot.on(message('text'), async (ctx) => {
+  const step = ctx.session?.rechargeStep;
+  if (!step) return;
+
+  const text = ctx.message.text.trim();
+
+  if (step === 'amount') {
+    const amount = parseFloat(text);
+    if (isNaN(amount) || amount < 1) {
+      return ctx.reply('❌ Please enter a valid amount (minimum $1):');
+    }
+    ctx.session.rechargeAmount = amount;
+    ctx.session.rechargeStep = 'txid';
+    await ctx.reply(
+      `✅ Amount: *$${amount}*\n\n` +
+      `Enter your transaction ID (txid) or reference number:`,
+      { parse_mode: 'Markdown', ...cancelKeyboard }
+    );
+    return;
+  }
+
+  if (step === 'txid') {
+    const token = await loginUser(ctx);
+    if (!token) {
+      ctx.session = {};
+      return ctx.reply('❌ Authentication error. Please restart: /start');
+    }
+
+    const { rechargeMethod, rechargeAmount } = ctx.session;
+
+    try {
+      await rechargeApi.create({
+        method: rechargeMethod,
+        amountUsd: rechargeAmount,
+        txid: text,
+      });
+
+      ctx.session = {};
+
+      const admin = isAdmin(ctx.from!.id);
+      const keyboard = admin ? adminKeyboard : mainKeyboard;
+
+      await ctx.reply(
+        `✅ *Recharge Request Submitted!*\n\n` +
+        `Method: ${METHOD_DISPLAY[rechargeMethod!] || rechargeMethod}\n` +
+        `Amount: *$${rechargeAmount}*\n` +
+        `TxID: \`${text}\`\n` +
+        `Status: *PENDING* ⏳\n\n` +
+        `Our team will review and approve within 24h.`,
+        { parse_mode: 'Markdown', ...keyboard }
+      );
+    } catch (err: any) {
+      ctx.session = {};
+      const admin = isAdmin(ctx.from!.id);
+      const keyboard = admin ? adminKeyboard : mainKeyboard;
+      const msg = err?.response?.data?.message || err.message || 'Unknown error';
+      await ctx.reply(`❌ Error submitting request: ${msg}`, keyboard);
+    }
+  }
+});
+
+// ── Launch ─────────────────────────────────────────────────────────
 bot.launch(() => console.log('🤖 Bot started!'));
 
 process.once('SIGINT', () => bot.stop('SIGINT'));
