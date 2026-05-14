@@ -25,7 +25,7 @@ const CRYPTOMUS_MERCHANT = process.env.CRYPTOMUS_MERCHANT_ID ?? '';
 const CRYPTOMUS_KEY      = process.env.CRYPTOMUS_API_KEY ?? '';
 const SUPPORT_USERNAME   = process.env.SUPPORT_USERNAME ?? 'toopsellerr';
 const SHOP_NAME          = process.env.SHOP_NAME ?? 'toopseller';
-const WELCOME_IMAGE_URL  = process.env.WELCOME_IMAGE_URL ?? 'https://i.ibb.co/Wp5QbhbY/tele.png';
+const WELCOME_IMAGE_URL  = process.env.WELCOME_IMAGE_URL ?? '';
 
 if (!BOT_TOKEN) throw new Error('TELEGRAM_BOT_TOKEN is required');
 console.log(`🤖 API: ${API_URL} | SMSPool: ${SMSPOOL_KEY ? '✅' : '❌'} | Cryptomus: ${CRYPTOMUS_MERCHANT ? '✅' : '❌'}`);
@@ -380,10 +380,12 @@ async function showAuthMenu(ctx: any) {
     [Markup.button.callback(t(lang, 'btn_register'), 'do_register')],
   ]);
   if (WELCOME_IMAGE_URL) {
-    await ctx.replyWithPhoto(WELCOME_IMAGE_URL, { caption, parse_mode: 'Markdown', ...keyboard });
-  } else {
-    await ctx.reply(caption, { parse_mode: 'Markdown', ...keyboard });
+    try {
+      await ctx.replyWithPhoto(WELCOME_IMAGE_URL, { caption, parse_mode: 'Markdown', ...keyboard });
+      return;
+    } catch { /* bad URL — fall through to text reply */ }
   }
+  await ctx.reply(caption, { parse_mode: 'Markdown', ...keyboard });
 }
 
 bot.start(async (ctx) => {
@@ -402,7 +404,11 @@ bot.start(async (ctx) => {
     const caption = t(lang, 'welcome_back', { email: session.email });
     const kb      = getKeyboard(chatId, session.role);
     if (WELCOME_IMAGE_URL) {
-      await ctx.replyWithPhoto(WELCOME_IMAGE_URL, { caption, parse_mode: 'Markdown', ...kb });
+      try {
+        await ctx.replyWithPhoto(WELCOME_IMAGE_URL, { caption, parse_mode: 'Markdown', ...kb });
+      } catch {
+        await ctx.reply(caption, { parse_mode: 'Markdown', ...kb });
+      }
     } else {
       await ctx.reply(caption, { parse_mode: 'Markdown', ...kb });
     }
