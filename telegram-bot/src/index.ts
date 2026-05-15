@@ -1827,9 +1827,17 @@ bot.action('adm_stats', async (ctx) => {
     const openTickets   = [...supportTickets.values()].filter(t => t.status === 'open').length;
     const closedTickets = [...supportTickets.values()].filter(t => t.status === 'closed').length;
 
-    // Revenue in USD
+    // Revenue
     const totalRevenueCents: number = s.totalRevenue ?? 0;
-    const revenueUsd = (totalRevenueCents / CREDITS_PER_USD).toFixed(2);
+    const todayRevenueCents: number = s.todayRevenue ?? 0;
+    const revenueUsd      = (totalRevenueCents / CREDITS_PER_USD).toFixed(2);
+    const todayRevenueUsd = (todayRevenueCents  / CREDITS_PER_USD).toFixed(2);
+
+    // Top SMS services
+    const topSms: { service: string; count: number }[] = s.topServices ?? [];
+    const topSmsLine = topSms.length
+      ? topSms.map((t, i) => `   ${i + 1}. \`${t.service}\` — *${t.count}* orders`).join('\n')
+      : '   No data yet';
 
     const now = new Date().toLocaleString('en-GB', { timeZone: 'Africa/Casablanca', day:'2-digit', month:'short', hour:'2-digit', minute:'2-digit' });
 
@@ -1838,19 +1846,21 @@ bot.action('adm_stats', async (ctx) => {
       `🕐 _${now}_\n` +
       `━━━━━━━━━━━━━━━━━\n\n` +
       `👥 *Users*\n` +
-      `   Total registered: *${s.totalUsers ?? 0}*\n\n` +
-      `📋 *Orders*\n` +
-      `   Total SMS orders: *${s.totalOrders ?? 0}*\n` +
-      `   Pending SMS: *${s.pendingOrders ?? 0}*\n\n` +
+      `   Total: *${s.totalUsers ?? 0}*  ·  Today: *+${s.todayUsers ?? 0}*\n\n` +
+      `📋 *SMS Orders*\n` +
+      `   Total: *${s.totalOrders ?? 0}*  ·  Today: *${s.todayOrders ?? 0}*  ·  Pending: *${s.pendingOrders ?? 0}*\n\n` +
       `💳 *Recharges*\n` +
       `   Awaiting approval: *${pendingRecharges}*\n\n` +
       `💰 *Revenue*\n` +
-      `   Total: *${totalRevenueCents} credits* (~$${revenueUsd})\n\n` +
+      `   Today: *$${todayRevenueUsd}*\n` +
+      `   Total: *$${revenueUsd}*\n\n` +
+      `🏆 *Top SMS Services*\n` +
+      `${topSmsLine}\n\n` +
       `🛒 *Digital Store*\n` +
-      `   Products: *${totalProducts}* | Stock: *${availableItems}* available / *${soldItems}* sold\n` +
-      `   📅 Active subscriptions: *${activeSubs}* _(VPN / IPTV / Office)_\n\n` +
+      `   Products: *${totalProducts}*  ·  Available: *${availableItems}*  ·  Sold: *${soldItems}*\n` +
+      `   📅 Active subs: *${activeSubs}* _(VPN / IPTV / Office)_\n\n` +
       `🎫 *Support Tickets*\n` +
-      `   Open: *${openTickets}* | Closed: *${closedTickets}*`,
+      `   Open: *${openTickets}*  ·  Closed: *${closedTickets}*`,
       {
         parse_mode: 'Markdown',
         ...Markup.inlineKeyboard([

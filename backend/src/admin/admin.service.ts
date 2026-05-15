@@ -163,11 +163,18 @@ export class AdminService {
   // ── Platform stats ────────────────────────────────────────
 
   async getStats() {
+    const todayStart = new Date();
+    todayStart.setHours(0, 0, 0, 0);
+
     const [
       totalUsers,
       totalOrders,
       pendingOrders,
       revenueResult,
+      todayUsers,
+      todayOrders,
+      todayRevenueResult,
+      topServices,
     ] = await Promise.all([
       this.prisma.user.count(),
       this.prisma.order.count(),
@@ -176,9 +183,22 @@ export class AdminService {
         where: { type: 'DEBIT' },
         _sum: { amount: true },
       }),
+      this.prisma.user.count({ where: { createdAt: { gte: todayStart } } }),
+      this.prisma.order.count({ where: { createdAt: { gte: todayStart } } }),
+      this.prisma.transaction.aggregate({
+        where: { type: 'DEBIT', createdAt: { gte: todayStart } },
+        _sum: { amount: true },
+      }),
+      this.prisma.order.groupBy({
+        by: ['service'],
+        _count: { service: true },
+        orderBy: { _count: { service: 'desc' } },
+        take: 5,
+      }),
     ]);
 
     const totalRevenue = Math.abs(revenueResult._sum.amount ?? 0);
+    const todayRevenue = Math.abs(todayRevenueResult._sum.amount ?? 0);
 
     return {
       totalUsers,
@@ -186,6 +206,11 @@ export class AdminService {
       pendingOrders,
       totalRevenue,
       totalRevenueFormatted: this.wallet.formatCents(totalRevenue),
+      todayUsers,
+      todayOrders,
+      todayRevenue,
+      todayRevenueFormatted: this.wallet.formatCents(todayRevenue),
+      topServices: topServices.map(s => ({ service: s.service, count: s._count.service })),
     };
   }
 
