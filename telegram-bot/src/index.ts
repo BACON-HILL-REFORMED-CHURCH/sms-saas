@@ -59,6 +59,8 @@ interface SMSService  { ID: string; name: string; short_name: string; }
 
 interface DigitalItem    { id: string; credentials: string; soldTo?: number; soldAt?: Date; }
 interface DigitalProduct { id: string; category: string; name: string; description: string; price: number; stock: DigitalItem[]; imageUrl?: string; }
+interface SupportTicket  { id: string; chatId: number; email: string; subject: string; messages: { from: 'user'|'admin'; text: string; at: string }[]; status: 'open'|'closed'; createdAt: string; }
+interface DigitalPurchase { productId: string; productName: string; credentials: string; price: number; purchasedAt: string; }
 
 // ── Storage ───────────────────────────────────────────────────
 const sessions    = new Map<number, UserSession>();
@@ -76,7 +78,9 @@ let digitalProducts  = new Map<string, DigitalProduct>();
 let bannedUsers         = new Set<number>();
 let broadcastOptOut     = new Set<number>();
 let flashSale: { percent: number; endsAt: string } | null = null;
-const errorAlertTimers  = new Map<string, number>(); // label → last alert ms
+const errorAlertTimers  = new Map<string, number>();
+const supportTickets    = new Map<string, SupportTicket>();
+const digitalPurchases  = new Map<number, DigitalPurchase[]>(); // chatId → purchases
 
 let scheduledBroadcast: {
   message: string; photoUrl?: string;
@@ -1965,6 +1969,16 @@ bot.action(/^dbuy_(.+)$/, async (ctx) => {
     item.soldAt = new Date();
     saveDigitalProducts(digitalProducts);
 
+    // Save to purchase history
+    const purchaseRecord: DigitalPurchase = {
+      productId: product.id, productName: product.name,
+      credentials: item.credentials, price: buyPrice,
+      purchasedAt: new Date().toISOString(),
+    };
+    const history = digitalPurchases.get(chatId) ?? [];
+    history.push(purchaseRecord);
+    digitalPurchases.set(chatId, history);
+
     // Low stock alert
     const remaining = availableStock(product).length;
     if (remaining < 3) {
@@ -2131,6 +2145,131 @@ bot.action('adm_dp_bulk', async (ctx) => {
     `_Lines with same category+name+price are grouped into one product._`,
     { parse_mode: 'Markdown' },
   );
+});
+
+// ── Purchase History ──────────────────────────────────────────
+async function showPurchaseHistory(ctx: any, chatId: number) {
+  const purchases = digitalPurchases.get(chatId) ?? [];
+  if (!purchases.length) {
+    await ctx.reply('📊 *My Purchases*\n\n_No digital purchases yet._', { parse_mode: 'Markdown' });
+    return;
+  }
+  let msg = `📊 *My Purchases* (${purchases.length} total)\n\n`;
+  for (const p of purchases.slice(-10).reverse()) {
+    const date = new Date(p.purchasedAt).toLocaleDateString();
+    msg += `• *${p.productName}* — ${p.price} cr\n  📅 ${date}\n  🔑 \`${p.credentials}\`\n\n`;
+  }
+  await ctx.reply(msg, { parse_mode: 'Markdown' });
+}
+
+// ── Support Tickets ───────────────────────────────────────────
+async function showSupportTickets(ctx: any) {
+  const chatId = ctx.chat!.id;
+  const session = sessions.get(chatId);
+  if (!session) return;
+  const myTickets = [...supportTickets.values()].filter(t => t.chatId === chatId);
+  const buttons = [
+    [Markup.button.callback('➕ New Ticket', 'tkt_new')],
+    ...myTickets.slice(-5).map(t => [
+      Markup.button.callback(`${t.status === 'open' ? '🟢' : '⚫'} #${t.id} — ${t.subject.slice(0, 25)}`, `tkt_view_${t.id}`)
+    ]),
+  ];
+  await ctx.reply('🎫 *Support Tickets*\n\nOpen a ticket and our team will reply here.', { parse_mode: 'Markdown', ...Markup.inlineKeyboard(buttons) });
+}
+
+bot.action('tkt_new', async (ctx) => {
+  await ctx.answerCbQuery();
+  pending.set(ctx.chat!.id, { state: 'ticket_subject', data: {} });
+  await ctx.reply('🎫 *New Support Ticket*\n\nEnter the subject of your issue:', { parse_mode: 'Markdown' });
+});
+
+bot.action(/^tkt_view_(.+)$/, async (ctx) => {
+  await ctx.answerCbQuery();
+  const ticket = supportTickets.get(ctx.match[1]);
+  if (!ticket) { await ctx.reply('❌ Ticket not found.'); return; }
+  let msg = `🎫 *Ticket #${ticket.id}*\n📌 ${ticket.subject}\n📅 ${new Date(ticket.createdAt).toLocaleDateString()}\nStatus: ${ticket.status === 'open' ? '🟢 Open' : '⚫ Closed'}\n\n`;
+  for (const m of ticket.messages) {
+    msg += `${m.from === 'user' ? '👤' : '🛠️'} ${m.text}\n`;
+  }
+  await ctx.reply(msg, { parse_mode: 'Markdown', ...Markup.inlineKeyboard([[Markup.button.callback('💬 Reply', `tkt_reply_user_${ticket.id}`)]]) });
+});
+
+bot.action(/^tkt_reply_user_(.+)$/, async (ctx) => {
+  await ctx.answerCbQuery();
+  const chatId = ctx.chat!.id;
+  pending.set(chatId, { state: 'ticket_msg', data: { ticketId: ctx.match[1] } });
+  await ctx.reply('💬 Type your message:');
+});
+
+bot.action(/^tkt_reply_(.+)$/, async (ctx) => {
+  await ctx.answerCbQuery();
+  const chatId = ctx.chat!.id;
+  const session = sessions.get(chatId);
+  if (!session || session.role !== 'ADMIN') return;
+  pending.set(chatId, { state: 'adm_ticket_reply', data: { ticketId: ctx.match[1] } });
+  await ctx.reply(`💬 Type reply for ticket *#${ctx.match[1]}*:`, { parse_mode: 'Markdown' });
+});
+
+bot.action('adm_tickets', async (ctx) => {
+  await ctx.answerCbQuery();
+  const session = sessions.get(ctx.chat!.id);
+  if (!session || session.role !== 'ADMIN') return;
+  const open = [...supportTickets.values()].filter(t => t.status === 'open');
+  if (!open.length) { await ctx.reply('🎫 No open tickets.'); return; }
+  const buttons = open.map(t => [Markup.button.callback(`🟢 #${t.id} — ${t.subject.slice(0, 30)} (${t.email})`, `tkt_adm_${t.id}`)]);
+  await ctx.reply(`🎫 *Open Tickets* (${open.length})`, { parse_mode: 'Markdown', ...Markup.inlineKeyboard(buttons) });
+});
+
+bot.action(/^tkt_adm_(.+)$/, async (ctx) => {
+  await ctx.answerCbQuery();
+  const ticket = supportTickets.get(ctx.match[1]);
+  if (!ticket) { await ctx.reply('❌ Not found.'); return; }
+  let msg = `🎫 *Ticket #${ticket.id}*\n👤 ${ticket.email} (\`${ticket.chatId}\`)\n📌 ${ticket.subject}\n\n`;
+  for (const m of ticket.messages) { msg += `${m.from === 'user' ? '👤' : '🛠️'} ${m.text}\n`; }
+  await ctx.reply(msg, { parse_mode: 'Markdown', ...Markup.inlineKeyboard([
+    [Markup.button.callback(`💬 Reply`, `tkt_reply_${ticket.id}`)],
+    [Markup.button.callback(`✅ Close`, `tkt_close_${ticket.id}`)],
+  ]) });
+});
+
+bot.action(/^tkt_close_(.+)$/, async (ctx) => {
+  await ctx.answerCbQuery();
+  const ticket = supportTickets.get(ctx.match[1]);
+  if (!ticket) return;
+  ticket.status = 'closed';
+  await ctx.reply(`✅ Ticket #${ticket.id} closed.`);
+  try { await bot.telegram.sendMessage(ticket.chatId, `🎫 Your ticket *#${ticket.id}* has been closed.\n\nThank you for contacting support!`, { parse_mode: 'Markdown' }); } catch {}
+});
+
+// ── Admin: Search User ────────────────────────────────────────
+bot.action('adm_search_user', async (ctx) => {
+  await ctx.answerCbQuery();
+  const session = sessions.get(ctx.chat!.id);
+  if (!session || session.role !== 'ADMIN') return;
+  pending.set(ctx.chat!.id, { state: 'adm_search_user', data: {} });
+  await ctx.reply('🔍 *Search User*\n\nEnter email or Telegram ID:', { parse_mode: 'Markdown' });
+});
+
+// ── Admin: Subscriptions tracker ──────────────────────────────
+bot.action('adm_subscriptions', async (ctx) => {
+  await ctx.answerCbQuery();
+  const session = sessions.get(ctx.chat!.id);
+  if (!session || session.role !== 'ADMIN') return;
+  const subCats = ['vpn', 'office', 'iptv', 'streaming'];
+  const sold: { product: DigitalProduct; item: DigitalItem }[] = [];
+  for (const product of digitalProducts.values()) {
+    if (!subCats.includes(product.category)) continue;
+    for (const item of product.stock) {
+      if (item.soldTo) sold.push({ product, item });
+    }
+  }
+  if (!sold.length) { await ctx.reply('📅 No subscriptions sold yet.'); return; }
+  let msg = `📅 *Active Subscriptions* (${sold.length} total)\n\n`;
+  for (const { product, item } of sold.slice(0, 20)) {
+    const date = item.soldAt ? new Date(item.soldAt).toLocaleDateString() : '—';
+    msg += `• *${product.name}*\n  🆔 User: \`${item.soldTo}\` | 📅 ${date}\n  🔑 \`${item.credentials}\`\n\n`;
+  }
+  await ctx.reply(msg, { parse_mode: 'Markdown' });
 });
 
 // Document handler for bulk import
@@ -2428,6 +2567,60 @@ bot.action('adm_flash_stop', async (ctx) => {
 // ════════════════════════════════════════════════════════════════
 // TEXT HANDLER — State machine
 // ════════════════════════════════════════════════════════════════
+// ── Photo handler (payment proof + broadcast photo) ───────────
+bot.on('photo', async (ctx) => {
+  const chatId = ctx.chat.id;
+  if (bannedUsers.has(chatId)) return;
+  const state = pending.get(chatId);
+  const session = sessions.get(chatId);
+  if (!state) return;
+
+  // Payment proof
+  if (state.state === 'recharge_proof') {
+    const fileId = ctx.message.photo[ctx.message.photo.length - 1].file_id;
+    const { data } = state;
+    pending.set(chatId, { state: 'recharge_proof', data: { ...data, proofFileId: fileId } });
+    // Trigger the same flow as if user sent /skip (reuse text handler logic via direct call)
+    const lang = getLang(chatId);
+    if (!session) { await ctx.reply('❌ Not logged in.'); return; }
+    pending.delete(chatId);
+    const methodDisplay: Record<string, string> = {
+      BINANCE: '💛 Binance ID', USDT: '💚 USDT TRC20', IBAN: '🏦 IBAN', CIH: '🏧 CIH Bank',
+    };
+    const txid = data.txid;
+    try {
+      await makeApi(session.token).post('/recharge', { method: data.method, amountUsd: parseFloat(data.amount), txid });
+      await ctx.reply(t(lang, 'recharge_submitted', { method: methodDisplay[data.method] || data.method, amount: data.amount, txid }), { parse_mode: 'Markdown', ...getKeyboard(chatId, session.role) });
+      const notifMsg = `💳 *New Recharge Request!*\n\n👤 Email: *${session.email}*\n🆔 Telegram ID: \`${chatId}\`\n🏦 Method: ${methodDisplay[data.method] || data.method}\n💰 Amount: *$${data.amount} USD*\n🔖 TxID: \`${txid}\`\n📸 *Proof attached*`;
+      const notifMarkup = Markup.inlineKeyboard([[Markup.button.callback('📋 Review Recharges', 'adm_review')]]);
+      const notifyIds = adminChatId ? [adminChatId] : ADMIN_TG_IDS;
+      for (const adminId of notifyIds) {
+        try { await bot.telegram.sendPhoto(adminId, fileId, { caption: notifMsg, parse_mode: 'Markdown', ...notifMarkup }); } catch {}
+      }
+    } catch (err: any) {
+      await ctx.reply(`❌ ${err?.response?.data?.message || err.message}`, getKeyboard(chatId, session.role));
+    }
+    return;
+  }
+
+  // Support ticket photo attachment
+  if (state.state === 'ticket_msg') {
+    const fileId = ctx.message.photo[ctx.message.photo.length - 1].file_id;
+    const ticket = supportTickets.get(state.data.ticketId);
+    if (!ticket || !session) return;
+    pending.delete(chatId);
+    ticket.messages.push({ from: 'user', text: `[photo:${fileId}]`, at: new Date().toISOString() });
+    await ctx.reply('📸 Photo sent to support.', getKeyboard(chatId, session.role));
+    const adminIds = adminChatId ? [adminChatId] : ADMIN_TG_IDS;
+    for (const adminId of adminIds) {
+      try {
+        await bot.telegram.sendPhoto(adminId, fileId, { caption: `🎫 Ticket *#${ticket.id}* — ${session.email}`, parse_mode: 'Markdown', ...Markup.inlineKeyboard([[Markup.button.callback(`💬 Reply #${ticket.id}`, `tkt_reply_${ticket.id}`)]]) });
+      } catch {}
+    }
+    return;
+  }
+});
+
 bot.on('text', async (ctx) => {
   const chatId  = ctx.chat.id;
   if (bannedUsers.has(chatId)) return;   // banned
@@ -2441,13 +2634,14 @@ bot.on('text', async (ctx) => {
     if (text === t(lang, 'btn_balance'))       return showBalance(ctx, session);
     if (text === t(lang, 'btn_deposit'))       return showDeposit(ctx);
     if (text === t(lang, 'btn_digital_store')) return showDigitalStore(ctx);
-    if (text === t(lang, 'btn_support'))       return showSupport(ctx);
+    if (text === t(lang, 'btn_support'))       return showSupportTickets(ctx);
     if (text === t(lang, 'btn_orders'))   return showOrders(ctx, session);
     if (text === t(lang, 'btn_buy'))      return showCountries(ctx);
     if (text === t(lang, 'btn_esim'))     return showEsimProducts(ctx, session);
     if (text === t(lang, 'btn_coupon'))   return showRedeemCoupon(ctx);
     if (text === t(lang, 'btn_referral')) return showReferral(ctx);
     if (text === t(lang, 'btn_profile'))  return showProfile(ctx, session);
+    if (text === '📊 My Purchases')       return showPurchaseHistory(ctx, chatId);
     if (text === t(lang, 'btn_admin') && session.role === 'ADMIN') {
       await ctx.reply('🔧 *Admin Panel*', {
         parse_mode: 'Markdown',
@@ -2463,6 +2657,9 @@ bot.on('text', async (ctx) => {
           [Markup.button.callback('⏰ Scheduled Post',   'adm_sched')],
           [Markup.button.callback('⚡ Flash Sale',        'adm_flash')],
           [Markup.button.callback('🚫 Ban User',          'adm_ban')],
+          [Markup.button.callback('🎫 Support Tickets',  'adm_tickets')],
+          [Markup.button.callback('🔍 Search User',      'adm_search_user')],
+          [Markup.button.callback('📅 Subscriptions',    'adm_subscriptions')],
           [Markup.button.callback('💳 SMSPool Balance',  'adm_smsbal')],
           [Markup.button.callback('📡 eSIM Manager',     'adm_esim')],
           [Markup.button.callback('🛒 Digital Manager',  'adm_digital')],
@@ -2809,43 +3006,54 @@ bot.on('text', async (ctx) => {
       await ctx.reply(t(lang, 'cancelled'), kb);
       return;
     }
-    pending.delete(chatId);
     if (!session) { await ctx.reply(t(lang, 'unauthorized')); return; }
+    // Save TxID and ask for payment proof photo
+    pending.set(chatId, { state: 'recharge_proof', data: { ...data, txid: text } });
+    await ctx.reply(
+      `📸 *Send payment proof*\n\nSend a screenshot of your payment.\nOr type /skip to submit without proof.`,
+      { parse_mode: 'Markdown', ...Markup.keyboard([['⏭️ Skip proof']]).resize() }
+    );
+    return;
+  }
+
+  if (state.state === 'recharge_proof') {
+    const lang = getLang(chatId);
+    if (!session) { await ctx.reply(t(lang, 'unauthorized')); return; }
+    pending.delete(chatId);
     const methodDisplay: Record<string, string> = {
       BINANCE: '💛 Binance ID', USDT: '💚 USDT TRC20', IBAN: '🏦 IBAN', CIH: '🏧 CIH Bank',
     };
+    const txid = data.txid || text;
     try {
       await makeApi(session.token).post('/recharge', {
         method: data.method,
         amountUsd: parseFloat(data.amount),
-        txid: text,
+        txid,
       });
       await ctx.reply(
         t(lang, 'recharge_submitted', {
           method: methodDisplay[data.method] || data.method,
           amount: data.amount,
-          txid: text,
+          txid,
         }),
         { parse_mode: 'Markdown', ...getKeyboard(chatId, session.role) }
       );
-
-      // Notify admin
+      const notifMsg =
+        `💳 *New Recharge Request!*\n\n` +
+        `👤 Email: *${session.email}*\n` +
+        `🆔 Telegram ID: \`${chatId}\`\n` +
+        `🏦 Method: ${methodDisplay[data.method] || data.method}\n` +
+        `💰 Amount: *$${data.amount} USD*\n` +
+        `🔖 TxID: \`${txid}\``;
+      const notifMarkup = Markup.inlineKeyboard([[Markup.button.callback('📋 Review Recharges', 'adm_review')]]);
       const notifyIds = adminChatId ? [adminChatId] : ADMIN_TG_IDS;
       for (const adminId of notifyIds) {
         try {
-          await bot.telegram.sendMessage(
-            adminId,
-            `💳 *New Recharge Request!*\n\n` +
-            `👤 Email: *${session.email}*\n` +
-            `🆔 Telegram ID: \`${chatId}\`\n` +
-            `🏦 Method: ${methodDisplay[data.method] || data.method}\n` +
-            `💰 Amount: *$${data.amount} USD*\n` +
-            `🔖 TxID: \`${text}\``,
-            {
-              parse_mode: 'Markdown',
-              ...Markup.inlineKeyboard([[Markup.button.callback('📋 Review Recharges', 'adm_review')]]),
-            },
-          );
+          if (data.proofFileId) {
+            await bot.telegram.sendPhoto(adminId, data.proofFileId, { caption: notifMsg, parse_mode: 'Markdown', ...notifMarkup });
+          } else {
+            await bot.telegram.sendMessage(adminId, notifMsg, { parse_mode: 'Markdown', ...notifMarkup });
+          }
         } catch {}
       }
     } catch (err: any) {
@@ -2956,6 +3164,100 @@ bot.on('text', async (ctx) => {
     product.imageUrl = text === '/skip' ? undefined : text.trim();
     saveDigitalProducts(digitalProducts);
     await ctx.reply(`✅ Image ${product.imageUrl ? 'updated' : 'removed'} for *${product.name}*`, { parse_mode: 'Markdown' });
+    return;
+  }
+
+  // ── Support Ticket: new ticket subject ──
+  if (state.state === 'ticket_subject') {
+    if (!session) return;
+    pending.set(chatId, { state: 'ticket_msg', data: { subject: text, isNew: 'true' } });
+    await ctx.reply('💬 Describe your issue:');
+    return;
+  }
+
+  // ── Support Ticket: user message ──
+  if (state.state === 'ticket_msg') {
+    if (!session) return;
+    pending.delete(chatId);
+    if (data.isNew) {
+      const ticketId = `T${Date.now().toString(36).toUpperCase()}`;
+      const ticket: SupportTicket = {
+        id: ticketId, chatId, email: session.email,
+        subject: data.subject, status: 'open',
+        createdAt: new Date().toISOString(),
+        messages: [{ from: 'user', text, at: new Date().toISOString() }],
+      };
+      supportTickets.set(ticketId, ticket);
+      await ctx.reply(`✅ Ticket *#${ticketId}* created!\n\nWe'll reply here soon.`, { parse_mode: 'Markdown', ...getKeyboard(chatId, session.role) });
+      const adminIds = adminChatId ? [adminChatId] : ADMIN_TG_IDS;
+      for (const adminId of adminIds) {
+        try {
+          await bot.telegram.sendMessage(adminId,
+            `🎫 *New Ticket #${ticketId}*\n👤 ${session.email} (\`${chatId}\`)\n📌 ${data.subject}\n\n💬 ${text}`,
+            { parse_mode: 'Markdown', ...Markup.inlineKeyboard([[Markup.button.callback(`💬 Reply #${ticketId}`, `tkt_reply_${ticketId}`)],[Markup.button.callback(`✅ Close #${ticketId}`, `tkt_close_${ticketId}`)]])}
+          );
+        } catch {}
+      }
+    } else {
+      const ticket = supportTickets.get(data.ticketId);
+      if (ticket) {
+        ticket.messages.push({ from: 'user', text, at: new Date().toISOString() });
+        await ctx.reply('✅ Message sent to support.', getKeyboard(chatId, session.role));
+        const adminIds = adminChatId ? [adminChatId] : ADMIN_TG_IDS;
+        for (const adminId of adminIds) {
+          try {
+            await bot.telegram.sendMessage(adminId,
+              `🎫 *Ticket #${ticket.id}* — reply from ${session.email}\n\n💬 ${text}`,
+              { parse_mode: 'Markdown', ...Markup.inlineKeyboard([[Markup.button.callback(`💬 Reply`, `tkt_reply_${ticket.id}`)]])}
+            );
+          } catch {}
+        }
+      }
+    }
+    return;
+  }
+
+  // ── Admin: ticket reply ──
+  if (state.state === 'adm_ticket_reply') {
+    pending.delete(chatId);
+    const ticket = supportTickets.get(data.ticketId);
+    if (!ticket) { await ctx.reply('❌ Ticket not found.'); return; }
+    ticket.messages.push({ from: 'admin', text, at: new Date().toISOString() });
+    await ctx.reply(`✅ Reply sent for ticket #${ticket.id}.`);
+    try {
+      await bot.telegram.sendMessage(ticket.chatId,
+        `🛠️ *Support reply for ticket #${ticket.id}*\n\n${text}`,
+        { parse_mode: 'Markdown', ...Markup.inlineKeyboard([[Markup.button.callback('💬 Reply', `tkt_reply_user_${ticket.id}`)]])}
+      );
+    } catch {}
+    return;
+  }
+
+  // ── Admin: search user ──
+  if (state.state === 'adm_search_user') {
+    pending.delete(chatId);
+    if (!session || session.role !== 'ADMIN') return;
+    try {
+      const isId = /^\d+$/.test(text.trim());
+      const res = await makeApi(session.token).get(`/admin/users?${isId ? 'telegramId' : 'email'}=${encodeURIComponent(text.trim())}`);
+      const users = unwrap(res);
+      const user = Array.isArray(users) ? users[0] : users;
+      if (!user) { await ctx.reply('❌ User not found.'); return; }
+      const purchases = [...digitalPurchases.entries()]
+        .filter(([cid]) => String(cid) === String(user.telegramId))
+        .flatMap(([, ps]) => ps);
+      await ctx.reply(
+        `👤 *User Info*\n\n` +
+        `📧 Email: \`${user.email}\`\n` +
+        `🆔 Telegram: \`${user.telegramId || '—'}\`\n` +
+        `💰 Balance: *${((user.balance ?? 0) / 100).toFixed(2)} credits*\n` +
+        `📅 Joined: ${user.createdAt ? new Date(user.createdAt).toLocaleDateString() : '—'}\n` +
+        `🛒 Digital purchases: *${purchases.length}*`,
+        { parse_mode: 'Markdown', ...Markup.inlineKeyboard([[Markup.button.callback('💰 Add Balance', `adm_addbal_user_${user.id}`)]]) }
+      );
+    } catch {
+      await ctx.reply('❌ User not found or API error.');
+    }
     return;
   }
 
