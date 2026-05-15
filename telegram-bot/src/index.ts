@@ -1905,20 +1905,167 @@ bot.action('adm_smsbal', async (ctx) => {
   } catch (err) { await ctx.reply(`❌ ${errMsg(err)}`); }
 });
 
-bot.action('adm_users', async (ctx) => {
-  const session = sessions.get(ctx.chat!.id);
-  if (!session || session.role !== 'ADMIN') { await ctx.answerCbQuery(); return; }
+// ── ADMIN: Users List (paginated) ──
+bot.action(/^adm_users(?:_p_(\d+))?$/, async (ctx) => {
+  const chatId  = ctx.chat!.id;
+  const session = sessions.get(chatId);
+  if (!session || session.role !== 'ADMIN') { await ctx.answerCbQuery('❌ Unauthorized'); return; }
+  await ctx.answerCbQuery();
+  const page = parseInt(ctx.match?.[1] ?? '1') || 1;
+  try {
+    const res    = await makeApi(session.token).get(`/admin/users?page=${page}&limit=8`);
+    const resp   = unwrap(res);
+    const users: any[] = resp?.users ?? (Array.isArray(resp) ? resp : []);
+    const meta   = resp?.meta ?? { page: 1, totalPages: 1, total: users.length };
+    if (!users.length) { await ctx.reply('👥 No users found.'); return; }
+
+    const lines = users.map((u: any, i: number) =>
+      `${(page - 1) * 8 + i + 1}. \`${u.email}\`\n   💰 ${u.balance ?? 0} cr · 📦 ${u._count?.orders ?? 0} orders`
+    ).join('\n\n');
+
+    const userBtns = users.map((u: any) =>
+      [Markup.button.callback(`👤 ${u.email.split('@')[0]}`, `adm_usr_${u.id}`)]
+    );
+    const navRow: any[] = [];
+    if (page > 1)               navRow.push(Markup.button.callback('⬅️ Prev', `adm_users_p_${page - 1}`));
+    if (page < meta.totalPages) navRow.push(Markup.button.callback('➡️ Next', `adm_users_p_${page + 1}`));
+
+    await ctx.reply(
+      `👥 *Users* — Page ${meta.page}/${meta.totalPages} (${meta.total} total)\n\n${lines}`,
+      {
+        parse_mode: 'Markdown',
+        ...Markup.inlineKeyboard([
+          ...userBtns,
+          ...(navRow.length ? [navRow] : []),
+        ]),
+      },
+    );
+  } catch (err) { await ctx.reply(`❌ ${errMsg(err)}`); }
+});
+
+// ── ADMIN: User detail view ──
+bot.action(/^adm_usr_([0-9a-f-]{36})$/, async (ctx) => {
+  const chatId  = ctx.chat!.id;
+  const session = sessions.get(chatId);
+  if (!session || session.role !== 'ADMIN') { await ctx.answerCbQuery('❌ Unauthorized'); return; }
+  await ctx.answerCbQuery();
+  const userId = ctx.match[1];
+  try {
+    const res = await makeApi(session.token).get(`/admin/users/${userId}`);
+    const u   = unwrap(res);
+    const bal     = u.balance ?? 0;
+    const joined  = new Date(u.createdAt).toLocaleDateString('en-GB');
+    const orders  = u.orders?.length ?? 0;
+
+    let userChatId: number | null = null;
+    for (const [cid, s] of sessions.entries()) {
+      if (s.userId === userId) { userChatId = cid; break; }
+    }
+    const isBanned  = userChatId !== null && bannedUsers.has(userChatId);
+    const botStatus = userChatId ? (isBanned ? '🚫 Banned' : '🟢 Active') : '⚫ Not in bot';
+
+    await ctx.reply(
+      `👤 *User Details*\n\n` +
+      `━━━━━━━━━━━━━━━\n` +
+      `📧 \`${u.email}\`\n` +
+      `💰 Balance: *${bal} credits*\n` +
+      `📦 Recent orders: ${orders}\n` +
+      `👤 Role: *${u.role}*\n` +
+      `📅 Joined: ${joined}\n` +
+      `🤖 Bot: ${botStatus}\n` +
+      `━━━━━━━━━━━━━━━`,
+      {
+        parse_mode: 'Markdown',
+        ...Markup.inlineKeyboard([
+          [
+            Markup.button.callback('➕ Add Credits',    `adm_usr_addcr_${userId}`),
+            Markup.button.callback('➖ Remove Credits', `adm_usr_rmcr_${userId}`),
+          ],
+          [
+            userChatId
+              ? Markup.button.callback(isBanned ? '✅ Unban User' : '🚫 Ban User', `adm_usr_ban_${userId}`)
+              : Markup.button.callback('⚫ Not in Bot', 'adm_usr_nobot'),
+          ],
+          [Markup.button.callback('🔙 Back to Users', 'adm_users')],
+        ]),
+      },
+    );
+  } catch (err) { await ctx.reply(`❌ ${errMsg(err)}`); }
+});
+
+// ── ADMIN: Start add credits flow ──
+bot.action(/^adm_usr_addcr_([0-9a-f-]+)$/, async (ctx) => {
+  const chatId  = ctx.chat!.id;
+  const session = sessions.get(chatId);
+  if (!session || session.role !== 'ADMIN') { await ctx.answerCbQuery('❌ Unauthorized'); return; }
+  pending.set(chatId, { state: 'adm_usr_cr_amt', data: { userId: ctx.match[1], mode: 'add' } });
+  await ctx.reply('➕ Enter credits to *add* (e.g. 500):', { parse_mode: 'Markdown' });
+  await ctx.answerCbQuery();
+});
+
+// ── ADMIN: Start remove credits flow ──
+bot.action(/^adm_usr_rmcr_([0-9a-f-]+)$/, async (ctx) => {
+  const chatId  = ctx.chat!.id;
+  const session = sessions.get(chatId);
+  if (!session || session.role !== 'ADMIN') { await ctx.answerCbQuery('❌ Unauthorized'); return; }
+  pending.set(chatId, { state: 'adm_usr_cr_amt', data: { userId: ctx.match[1], mode: 'remove' } });
+  await ctx.reply('➖ Enter credits to *remove* (e.g. 50):', { parse_mode: 'Markdown' });
+  await ctx.answerCbQuery();
+});
+
+// ── ADMIN: Ban / Unban user ──
+bot.action(/^adm_usr_ban_([0-9a-f-]+)$/, async (ctx) => {
+  const chatId  = ctx.chat!.id;
+  const session = sessions.get(chatId);
+  if (!session || session.role !== 'ADMIN') { await ctx.answerCbQuery('❌ Unauthorized'); return; }
+  const userId = ctx.match[1];
+  let userChatId: number | null = null;
+  for (const [cid, s] of sessions.entries()) {
+    if (s.userId === userId) { userChatId = cid; break; }
+  }
+  if (!userChatId) { await ctx.answerCbQuery('⚫ User has no bot session'); return; }
+
+  if (bannedUsers.has(userChatId)) {
+    bannedUsers.delete(userChatId);
+    saveBannedUsers(bannedUsers);
+    await ctx.answerCbQuery('✅ User unbanned!');
+    await ctx.reply(`✅ User *${userId.slice(0, 8)}…* has been *unbanned*.`, { parse_mode: 'Markdown' });
+  } else {
+    bannedUsers.add(userChatId);
+    saveBannedUsers(bannedUsers);
+    sessions.delete(userChatId);
+    await ctx.answerCbQuery('🚫 User banned!');
+    await ctx.reply(`🚫 User *${userId.slice(0, 8)}…* has been *banned*.`, { parse_mode: 'Markdown' });
+    try { await bot.telegram.sendMessage(userChatId, '🚫 Your account has been banned. Contact support.'); } catch {}
+  }
+});
+
+bot.action('adm_usr_nobot', async (ctx) => { await ctx.answerCbQuery('⚫ User has not used the bot yet'); });
+
+// ── ADMIN: Confirm credit adjustment ──
+bot.action('adm_usr_cr_yes', async (ctx) => {
+  const chatId  = ctx.chat!.id;
+  const session = sessions.get(chatId);
+  const state   = pending.get(chatId);
+  if (!session || !state) { await ctx.answerCbQuery(); return; }
+  pending.delete(chatId);
   await ctx.answerCbQuery();
   try {
-    const res   = await makeApi(session.token).get('/admin/users?limit=10');
-    const data  = unwrap(res);
-    const users: any[] = data?.users ?? (Array.isArray(data) ? data : []);
-    if (!users.length) { await ctx.reply('No users.'); return; }
-    const lines = users.map((u: any, i: number) =>
-      `${i+1}. \`${u.email}\`\n   💰 ${u.balance} cr | ${u.role}`
-    ).join('\n\n');
-    await ctx.reply(`👥 *Users:*\n\n${lines}`, { parse_mode:'Markdown' });
+    const { userId, mode } = state.data;
+    const amount  = parseInt(state.data.amount);
+    const credits = parseInt(state.data.credits);
+    await makeApi(session.token).post('/admin/balance/adjust', { userId, amount, reason: 'Telegram admin' });
+    await ctx.reply(
+      `✅ *${mode === 'add' ? `+${credits}` : `-${credits}`} credits* ${mode === 'add' ? 'added' : 'removed'} successfully.`,
+      { parse_mode: 'Markdown' },
+    );
   } catch (err) { await ctx.reply(`❌ ${errMsg(err)}`); }
+});
+
+bot.action('adm_usr_cr_no', async (ctx) => {
+  pending.delete(ctx.chat!.id);
+  await ctx.reply('❌ Cancelled.');
+  await ctx.answerCbQuery();
 });
 
 bot.action('adm_addbal', async (ctx) => {
@@ -3097,6 +3244,26 @@ bot.on('text', async (ctx) => {
       parse_mode:'Markdown',
       ...Markup.inlineKeyboard([[Markup.button.callback('✅ Confirm','adm_addbal_yes'),(Markup.button.callback('❌ Cancel','adm_addbal_no'))]]),
     });
+    return;
+  }
+
+  // ── ADMIN: Credit adjustment amount ──
+  if (state.state === 'adm_usr_cr_amt') {
+    const credits = parseInt(text.trim());
+    if (isNaN(credits) || credits <= 0) { await ctx.reply('❌ Enter a positive number:'); return; }
+    const { userId, mode } = data;
+    const amount = mode === 'add' ? credits : -credits;
+    pending.set(chatId, { state: 'adm_usr_cr_confirm', data: { ...data, amount: String(amount), credits: String(credits) } });
+    await ctx.reply(
+      `${mode === 'add' ? '➕' : '➖'} *${mode === 'add' ? 'Add' : 'Remove'} ${credits} credits* ${mode === 'add' ? 'to' : 'from'} user \`${userId.slice(0, 8)}…\`?\n\nConfirm?`,
+      {
+        parse_mode: 'Markdown',
+        ...Markup.inlineKeyboard([[
+          Markup.button.callback('✅ Confirm', 'adm_usr_cr_yes'),
+          Markup.button.callback('❌ Cancel',  'adm_usr_cr_no'),
+        ]]),
+      },
+    );
     return;
   }
 
