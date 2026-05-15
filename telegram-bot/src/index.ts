@@ -24,6 +24,7 @@ const SMSPOOL_KEY        = process.env.SMSPOOL_API_KEY ?? '';
 const MARKUP_PERCENT     = parseFloat(process.env.MARKUP_PERCENT ?? '50');
 const CREDITS_PER_USD    = 100;   // 100 credits = $1
 const REFERRAL_BONUS     = parseInt(process.env.REFERRAL_BONUS ?? '100');
+const WELCOME_BONUS      = parseInt(process.env.WELCOME_BONUS  ?? '100');
 const POLL_INTERVAL      = 30_000;
 const POLL_MAX           = 20;
 const CRYPTOMUS_MERCHANT = process.env.CRYPTOMUS_MERCHANT_ID ?? '';
@@ -2220,15 +2221,29 @@ async function showSupport(ctx: any) {
 }
 
 async function showDigitalStore(ctx: any) {
-  const chatId = ctx.chat?.id;
-  const lang   = getLang(chatId);
+  const chatId    = ctx.chat?.id;
+  const lang      = getLang(chatId);
+  const activeFlash = flashSale && new Date(flashSale.endsAt) > new Date() ? flashSale : null;
+
+  let header = t(lang, 'digital_store_title');
+  if (activeFlash) {
+    const msLeft    = new Date(activeFlash.endsAt).getTime() - Date.now();
+    const hLeft     = Math.floor(msLeft / 3_600_000);
+    const mLeft     = Math.floor((msLeft % 3_600_000) / 60_000);
+    const timeLeft  = hLeft > 0 ? `${hLeft}h ${mLeft}m` : `${mLeft}m`;
+    header = `⚡ *FLASH SALE — ${activeFlash.percent}% OFF!*\n⏳ Ends in: *${timeLeft}*\n🔥 All digital products discounted!\n\n` + header;
+  }
+
   await ctx.reply(
-    t(lang, 'digital_store_title'),
+    header,
     {
       parse_mode: 'Markdown',
       ...Markup.inlineKeyboard([
         ...DIGITAL_CATEGORIES.map(cat => [
-          Markup.button.callback(`${cat.emoji} ${cat.label}`, `dcat_${cat.id}`),
+          Markup.button.callback(
+            activeFlash ? `${cat.emoji} ${cat.label} ⚡-${activeFlash.percent}%` : `${cat.emoji} ${cat.label}`,
+            `dcat_${cat.id}`,
+          ),
         ]),
         [Markup.button.callback('🔍 Search Products', 'dstore_search')],
       ]),
@@ -3183,7 +3198,26 @@ bot.on('text', async (ctx) => {
     pending.delete(chatId);
     try {
       await makeApi().post('/auth/register', { email:data.email, password:text });
-      await ctx.reply(t(lang, 'register_success'), { parse_mode:'Markdown' });
+
+      // Add welcome bonus
+      if (botAdminToken && WELCOME_BONUS > 0) {
+        try {
+          const loginRes  = await makeApi().post('/auth/login', { email: data.email, password: text });
+          const newUserId = unwrap(loginRes)?.user?.id;
+          if (newUserId) {
+            await makeApi(botAdminToken).post('/admin/balance/adjust', {
+              userId: newUserId, amount: WELCOME_BONUS, reason: 'Welcome bonus',
+            });
+          }
+        } catch (e) { console.error('Welcome bonus failed:', errMsg(e)); }
+      }
+
+      await ctx.reply(
+        t(lang, 'register_success') + (WELCOME_BONUS > 0
+          ? `\n\n🎁 *Welcome Bonus!* You received *${WELCOME_BONUS} free credits* to get started! 🎉`
+          : ''),
+        { parse_mode: 'Markdown' },
+      );
 
       // Notify admin of new registration
       const regNotifyIds = adminChatId ? [adminChatId] : ADMIN_TG_IDS;
