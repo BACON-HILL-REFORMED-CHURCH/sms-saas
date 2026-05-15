@@ -326,6 +326,9 @@ const DIGITAL_CATEGORIES = [
   { id: 'streaming', emoji: '🎬', label: 'Streaming' },
   { id: 'gaming',    emoji: '🎮', label: 'Gaming' },
   { id: 'software',  emoji: '🔑', label: 'Software Licenses' },
+  { id: 'vpn',       emoji: '🔒', label: 'VPN' },
+  { id: 'office',    emoji: '💼', label: 'Office 365' },
+  { id: 'iptv',      emoji: '📺', label: 'IPTV' },
 ] as const;
 
 function availableStock(p: DigitalProduct): DigitalItem[] {
@@ -858,14 +861,6 @@ bot.action(/^cbuy_(\d+)_(\d+)_(\d+)$/, async (ctx) => {
 
   const [, countryId, serviceId, creditsStr] = ctx.match;
   const credits = parseInt(creditsStr);
-
-  // Anti-spam: max 5 active orders per user
-  const activeCount = [...smsOrders.values()].filter(o => o.chatId === chatId && o.status === 'pending').length;
-  if (activeCount >= 5) {
-    await ctx.answerCbQuery('❌ Max 5 active orders at once');
-    await ctx.reply('❌ You already have 5 active orders. Wait for them to complete before placing a new one.');
-    return;
-  }
 
   await ctx.answerCbQuery('⏳ Processing...');
 
