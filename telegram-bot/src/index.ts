@@ -2421,6 +2421,7 @@ bot.on('text', async (ctx) => {
         parse_mode: 'Markdown',
         ...Markup.inlineKeyboard([
           [Markup.button.callback('📊 Statistics',       'adm_stats')],
+          [Markup.button.callback('📋 Review Recharges','adm_review')],
           [Markup.button.callback('💳 Recharge Stats',  'adm_rch_stats')],
           [Markup.button.callback('👥 Users List',       'adm_users')],
           [Markup.button.callback('💰 Add Balance',      'adm_addbal')],
