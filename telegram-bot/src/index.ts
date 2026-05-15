@@ -2697,12 +2697,12 @@ bot.action(/^rch_approve_(.+)$/, async (ctx) => {
   await ctx.reply(
     `✅ *Confirm Approve?*\n\nRecharge ID: \`${id}\``,
     { parse_mode: 'Markdown', ...Markup.inlineKeyboard([
-      [Markup.button.callback('✅ Yes, Approve', `rch_approve_confirm_${id}`), Markup.button.callback('❌ Cancel', 'adm_review')],
+      [Markup.button.callback('✅ Yes, Approve', `rch_apc_${id}`), Markup.button.callback('❌ Cancel', 'adm_review')],
     ]) },
   );
 });
 
-bot.action(/^rch_approve_confirm_(.+)$/, async (ctx) => {
+bot.action(/^rch_apc_(.+)$/, async (ctx) => {
   if (!isTgAdmin(ctx.from!.id) && sessions.get(ctx.chat!.id)?.role !== 'ADMIN') { await ctx.answerCbQuery('❌ Unauthorized'); return; }
   const id = ctx.match[1];
   try {
