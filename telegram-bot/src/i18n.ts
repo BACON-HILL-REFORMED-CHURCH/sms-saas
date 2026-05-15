@@ -102,12 +102,12 @@ const translations: Record<Lang, Record<string, string>> = {
     recharge_method_chosen: '✅ Method: *{method}*\n\nEnter the amount in USD (e.g. 10):',
     recharge_amount_chosen: '✅ Amount: *${amount}*\n\nEnter your transaction ID or reference number:',
     recharge_submitted:
-      '✅ *Recharge Request Submitted!*\n\n' +
+      '⏳ *Recharge Request Sent!*\n\n' +
       'Method: {method}\n' +
       'Amount: *${amount}*\n' +
       'TxID: `{txid}`\n' +
-      'Status: *PENDING* ⏳\n\n' +
-      'Our team will review and approve within 24h.',
+      'Status: *PENDING — Awaiting admin approval* ⏳\n\n' +
+      'You will receive a notification once approved or rejected.',
     recharge_invalid_amount: '❌ Please enter a valid amount (minimum $1):',
     recharge_select_prompt: 'Please select a method from the keyboard:',
 
@@ -232,12 +232,12 @@ const translations: Record<Lang, Record<string, string>> = {
     recharge_method_chosen: '✅ الطريقة: *{method}*\n\nأدخل المبلغ بالدولار (مثال: 10):',
     recharge_amount_chosen: '✅ المبلغ: *${amount}*\n\nأدخل رقم المعاملة أو المرجع:',
     recharge_submitted:
-      '✅ *تم تقديم طلب الشحن!*\n\n' +
+      '⏳ *تم إرسال طلب الشحن!*\n\n' +
       'الطريقة: {method}\n' +
       'المبلغ: *${amount}*\n' +
       'رقم المعاملة: `{txid}`\n' +
-      'الحالة: *قيد الانتظار* ⏳\n\n' +
-      'سيراجع فريقنا طلبك ويوافق عليه خلال 24 ساعة.',
+      'الحالة: *في انتظار موافقة الأدمن* ⏳\n\n' +
+      'سيصلك إشعار عند الموافقة أو الرفض.',
     recharge_invalid_amount: '❌ أدخل مبلغًا صحيحًا (الحد الأدنى $1):',
     recharge_select_prompt: 'يرجى اختيار طريقة من لوحة المفاتيح:',
 
@@ -356,12 +356,12 @@ const translations: Record<Lang, Record<string, string>> = {
     recharge_method_chosen: '✅ Méthode: *{method}*\n\nEntrez le montant en USD (ex: 10):',
     recharge_amount_chosen: '✅ Montant: *${amount}*\n\nEntrez votre ID de transaction ou référence:',
     recharge_submitted:
-      '✅ *Demande de Recharge Soumise!*\n\n' +
+      '⏳ *Demande de Recharge Envoyée!*\n\n' +
       'Méthode: {method}\n' +
       'Montant: *${amount}*\n' +
       'TxID: `{txid}`\n' +
-      'Statut: *EN ATTENTE* ⏳\n\n' +
-      'Notre équipe examinera et approuvera dans les 24h.',
+      'Statut: *EN ATTENTE — approbation admin* ⏳\n\n' +
+      'Vous serez notifié une fois approuvé ou rejeté.',
     recharge_invalid_amount: '❌ Entrez un montant valide (minimum $1):',
     recharge_select_prompt: 'Veuillez sélectionner une méthode sur le clavier:',
 
@@ -472,12 +472,12 @@ const translations: Record<Lang, Record<string, string>> = {
     recharge_method_chosen: '✅ Metode: *{method}*\n\nMasukkan jumlah dalam USD (contoh: 10):',
     recharge_amount_chosen: '✅ Jumlah: *${amount}*\n\nMasukkan ID transaksi atau nomor referensi:',
     recharge_submitted:
-      '✅ *Permintaan Isi Ulang Dikirim!*\n\n' +
+      '⏳ *Permintaan Isi Ulang Terkirim!*\n\n' +
       'Metode: {method}\n' +
       'Jumlah: *${amount}*\n' +
       'TxID: `{txid}`\n' +
-      'Status: *MENUNGGU* ⏳\n\n' +
-      'Tim kami akan meninjau dan menyetujui dalam 24 jam.',
+      'Status: *MENUNGGU — persetujuan admin* ⏳\n\n' +
+      'Anda akan mendapat notifikasi setelah disetujui atau ditolak.',
     recharge_invalid_amount: '❌ Masukkan jumlah yang valid (minimal $1):',
     recharge_select_prompt: 'Silakan pilih metode dari keyboard:',
 
