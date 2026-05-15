@@ -2669,11 +2669,22 @@ bot.command('deposit', async (ctx) => {
 bot.action(/^rch_approve_(.+)$/, async (ctx) => {
   if (!isTgAdmin(ctx.from!.id) && sessions.get(ctx.chat!.id)?.role !== 'ADMIN') { await ctx.answerCbQuery('❌ Unauthorized'); return; }
   const id = ctx.match[1];
+  await ctx.answerCbQuery();
+  await ctx.reply(
+    `✅ *Confirm Approve?*\n\nRecharge ID: \`${id}\``,
+    { parse_mode: 'Markdown', ...Markup.inlineKeyboard([
+      [Markup.button.callback('✅ Yes, Approve', `rch_approve_confirm_${id}`), Markup.button.callback('❌ Cancel', 'adm_review')],
+    ]) },
+  );
+});
+
+bot.action(/^rch_approve_confirm_(.+)$/, async (ctx) => {
+  if (!isTgAdmin(ctx.from!.id) && sessions.get(ctx.chat!.id)?.role !== 'ADMIN') { await ctx.answerCbQuery('❌ Unauthorized'); return; }
+  const id = ctx.match[1];
   try {
     await makeApi(botAdminToken!).patch(`/recharge/admin/${id}/review`, { status: 'APPROVED' });
-    await ctx.editMessageReplyMarkup({ inline_keyboard: [] });
-    await ctx.answerCbQuery('✅ Approved');
-    await ctx.reply(`✅ Recharge \`${id}\` approved.`, { parse_mode: 'Markdown' });
+    await ctx.answerCbQuery('✅ Approved!');
+    await ctx.editMessageText(`✅ *Recharge Approved!*\n\nID: \`${id}\``, { parse_mode: 'Markdown' });
   } catch (err: any) {
     await ctx.answerCbQuery('❌ Error');
     await ctx.reply(`❌ ${err?.response?.data?.message || err.message}`);
@@ -2683,9 +2694,46 @@ bot.action(/^rch_approve_(.+)$/, async (ctx) => {
 bot.action(/^rch_reject_(.+)$/, async (ctx) => {
   if (!isTgAdmin(ctx.from!.id) && sessions.get(ctx.chat!.id)?.role !== 'ADMIN') { await ctx.answerCbQuery('❌ Unauthorized'); return; }
   const id = ctx.match[1];
+  await ctx.answerCbQuery();
+  await ctx.reply(
+    `❌ *Rejection Reason*\n\nID: \`${id}\`\n\nKhtar sabab:`,
+    { parse_mode: 'Markdown', ...Markup.inlineKeyboard([
+      [Markup.button.callback('🔴 TxID غير صحيح',      `rch_rej_r_${id}_txid`)],
+      [Markup.button.callback('🔴 Screenshot mzawr',   `rch_rej_r_${id}_fake`)],
+      [Markup.button.callback('🔴 Montant incorrect',  `rch_rej_r_${id}_amount`)],
+      [Markup.button.callback('🔴 Déjà traité',        `rch_rej_r_${id}_dup`)],
+      [Markup.button.callback('✏️ Sabab akhor',        `rch_rej_custom_${id}`)],
+    ]) },
+  );
+});
+
+bot.action(/^rch_rej_r_(.+)_(txid|fake|amount|dup)$/, async (ctx) => {
+  if (!isTgAdmin(ctx.from!.id) && sessions.get(ctx.chat!.id)?.role !== 'ADMIN') { await ctx.answerCbQuery('❌ Unauthorized'); return; }
+  const id     = ctx.match[1];
+  const code   = ctx.match[2];
+  const reasons: Record<string, string> = {
+    txid:   'TxID غير صحيح',
+    fake:   'Screenshot mzawr / غير صحيح',
+    amount: 'Montant incorrect',
+    dup:    'Demande déjà traitée',
+  };
+  const reason = reasons[code] ?? 'Rejected by admin';
+  try {
+    await makeApi(botAdminToken!).patch(`/recharge/admin/${id}/review`, { status: 'REJECTED', adminNote: reason });
+    await ctx.answerCbQuery('❌ Rejected');
+    await ctx.editMessageText(`❌ *Recharge Rejected*\n\nID: \`${id}\`\nReason: ${reason}`, { parse_mode: 'Markdown' });
+  } catch (err: any) {
+    await ctx.answerCbQuery('❌ Error');
+    await ctx.reply(`❌ ${err?.response?.data?.message || err.message}`);
+  }
+});
+
+bot.action(/^rch_rej_custom_(.+)$/, async (ctx) => {
+  if (!isTgAdmin(ctx.from!.id) && sessions.get(ctx.chat!.id)?.role !== 'ADMIN') { await ctx.answerCbQuery('❌ Unauthorized'); return; }
+  const id = ctx.match[1];
   pending.set(ctx.chat!.id, { state: 'adm_rch_reject', data: { id } });
   await ctx.answerCbQuery();
-  await ctx.reply(`Enter rejection reason for \`${id}\` (or send "none"):`, { parse_mode: 'Markdown' });
+  await ctx.reply(`✏️ Kteb sabab d reject:`, { parse_mode: 'Markdown' });
 });
 
 // ── Ban user ──────────────────────────────────────────────────
