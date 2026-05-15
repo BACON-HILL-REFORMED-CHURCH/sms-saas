@@ -74,6 +74,7 @@ const smsOrders      = new Map<string, SMSLocalOrder>();
 let userOrders       = new Map<number, string[]>();
 const paymentPolls   = new Map<string, NodeJS.Timeout>();
 const pendingDeposits= new Map<string, { chatId: number; amountUsd: number; credits: number }>();
+const creditingUuids = new Set<string>(); // prevents double-credit on concurrent deposit confirms
 let digitalProducts  = new Map<string, DigitalProduct>();
 let bannedUsers         = new Set<number>();
 let broadcastOptOut     = new Set<number>();
@@ -294,7 +295,11 @@ function startPaymentPolling(uuid: string) {
       if (status === 'paid' || status === 'paid_over' || status === 'wrong_amount_waiting') {
         // Only credit if fully paid
         if (status !== 'wrong_amount_waiting') {
-          clearInterval(t); paymentPolls.delete(uuid); pendingDeposits.delete(uuid);
+          clearInterval(t); paymentPolls.delete(uuid);
+          // Guard: skip if already credited (e.g. user pressed Check Payment at same time)
+          if (creditingUuids.has(uuid)) return;
+          creditingUuids.add(uuid);
+          pendingDeposits.delete(uuid);
           const session = sessions.get(info.chatId);
           if (botAdminToken && session) {
             try {
@@ -730,6 +735,12 @@ bot.action(/^depcheck_(.+)$/, async (ctx) => {
     const failed = status === 'cancel' || status === 'expired' || status === 'fail';
 
     if (paid && info) {
+      // Guard: skip if polling loop already credited this uuid
+      if (creditingUuids.has(uuid)) {
+        await ctx.reply('✅ Payment already confirmed and credits added!');
+        return;
+      }
+      creditingUuids.add(uuid);
       // Clear polling
       const t = paymentPolls.get(uuid); if (t) { clearInterval(t); paymentPolls.delete(uuid); }
       pendingDeposits.delete(uuid);
@@ -888,12 +899,24 @@ bot.action(/^cbuy_(\d+)_(\d+)_(\d+)$/, async (ctx) => {
   if (!session) { await ctx.answerCbQuery('Please login first'); return; }
 
   const [, countryId, serviceId, creditsStr] = ctx.match;
-  const credits = parseInt(creditsStr);
+  const claimedCredits = parseInt(creditsStr);
 
   await ctx.answerCbQuery('⏳ Processing...');
 
   try {
-    // 1. Check balance
+    // 1. Re-verify price from SMSPool (prevent callback data tampering)
+    const priceRes  = await smsPost('/request/price', { country: countryId, service: serviceId });
+    const priceData = priceRes.data;
+    const usdPrice  = parseFloat(priceData?.price ?? priceData?.cost ?? '0');
+    const realCredits = usdPrice > 0 ? toCredits(usdPrice) : claimedCredits;
+    // Reject if claimed price is more than 20% below real price
+    if (claimedCredits < Math.floor(realCredits * 0.8)) {
+      await ctx.reply('❌ Price mismatch. Please reopen the service and try again.');
+      return;
+    }
+    const credits = realCredits; // always use server-verified price
+
+    // 2. Check balance
     const balRes   = await makeApi(session.token).get('/wallet/balance');
     const { balance } = unwrap(balRes);
     if (balance < credits) {
@@ -901,7 +924,7 @@ bot.action(/^cbuy_(\d+)_(\d+)_(\d+)$/, async (ctx) => {
       return;
     }
 
-    // 2. Purchase from SMSPool
+    // 3. Purchase from SMSPool
     const [countries, services] = await Promise.all([getSMSCountries(), getSMSServices()]);
     const country = countries.find((c) => String(c.ID) === String(countryId));
     const service = services.find((s) => String(s.ID) === String(serviceId));
@@ -1906,6 +1929,8 @@ bot.action('adm_broadcast', async (ctx) => {
 // SCHEDULED BROADCAST
 // ════════════════════════════════════════════════════════════════
 bot.action('adm_sched', async (ctx) => {
+  const chatId = ctx.chat!.id;
+  if (!isTgAdmin(ctx.from!.id) && sessions.get(chatId)?.role !== 'ADMIN') { await ctx.answerCbQuery('❌ Unauthorized'); return; }
   await ctx.answerCbQuery();
   const status = scheduledBroadcast
     ? `✅ *Active* — every ${scheduledBroadcast.intervalMs / 3_600_000}h\n📝 "${scheduledBroadcast.message.slice(0, 60)}..."`
@@ -1924,6 +1949,7 @@ bot.action('adm_sched', async (ctx) => {
 });
 
 bot.action('adm_sched_stop', async (ctx) => {
+  if (!isTgAdmin(ctx.from!.id) && sessions.get(ctx.chat!.id)?.role !== 'ADMIN') { await ctx.answerCbQuery('❌ Unauthorized'); return; }
   await ctx.answerCbQuery('Stopped');
   if (scheduledBroadcast) {
     clearInterval(scheduledBroadcast.timer);
@@ -1933,6 +1959,7 @@ bot.action('adm_sched_stop', async (ctx) => {
 });
 
 bot.action('adm_sched_now', async (ctx) => {
+  if (!isTgAdmin(ctx.from!.id) && sessions.get(ctx.chat!.id)?.role !== 'ADMIN') { await ctx.answerCbQuery('❌ Unauthorized'); return; }
   await ctx.answerCbQuery('Sending...');
   if (!scheduledBroadcast) { await ctx.reply('❌ No scheduled post set. Create one first.'); return; }
   await ctx.reply('📤 Sending...');
@@ -1941,6 +1968,7 @@ bot.action('adm_sched_now', async (ctx) => {
 });
 
 bot.action('adm_sched_new', async (ctx) => {
+  if (!isTgAdmin(ctx.from!.id) && sessions.get(ctx.chat!.id)?.role !== 'ADMIN') { await ctx.answerCbQuery('❌ Unauthorized'); return; }
   await ctx.answerCbQuery();
   await ctx.reply(
     '⏰ *New Scheduled Post*\n\nChoose send interval:',
@@ -1958,6 +1986,7 @@ bot.action('adm_sched_new', async (ctx) => {
 });
 
 bot.action(/^adm_sched_iv_(\d+)$/, async (ctx) => {
+  if (!isTgAdmin(ctx.from!.id) && sessions.get(ctx.chat!.id)?.role !== 'ADMIN') { await ctx.answerCbQuery('❌ Unauthorized'); return; }
   const hours  = parseInt(ctx.match[1]);
   const chatId = ctx.chat!.id;
   await ctx.answerCbQuery(`Every ${hours}h selected`);
