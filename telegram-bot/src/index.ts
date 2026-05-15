@@ -1007,12 +1007,21 @@ function startAutoPolling(chatId: number, orderId: string, session: UserSession)
         if (order) await chargeForSms(order);
 
         await bot.telegram.sendMessage(chatId,
-          `🎉 *SMS Received!*\n\n` +
+          `🔔 *SMS Code Arrived\\!*\n` +
+          `━━━━━━━━━━━━━━━\n\n` +
           `📱 Number: \`${order?.phoneNumber}\`\n` +
-          `🔐 Code: \`${code}\`\n` +
+          `🌐 Service: *${order?.service ?? '—'}*\n\n` +
+          `🔑 *Your Code:*\n` +
+          `\`\`\`\n${code}\n\`\`\`\n` +
           `📄 _${full}_\n\n` +
-          `💳 *${order?.credits} credits deducted.*`,
-          { parse_mode: 'Markdown' },
+          `━━━━━━━━━━━━━━━\n` +
+          `💳 ${order?.credits} credits deducted`,
+          {
+            parse_mode: 'MarkdownV2',
+            ...Markup.inlineKeyboard([
+              [Markup.button.callback('📋 Copy Code', `copy_code_${orderId}`), Markup.button.callback('🔄 Order Again', `reagain_${order?.service ?? ''}_${order?.country ?? ''}`)],
+            ]),
+          },
         );
 
         // Notify admin
@@ -1068,7 +1077,23 @@ bot.action(/^poll_(.+)$/, async (ctx) => {
         order.status = 'received'; order.smsCode = code; order.smsText = full;
         await chargeForSms(order);
       }
-      await ctx.reply(`✅ *SMS Received!*\n\n🔐 Code: \`${code}\`\n📄 _${full}_\n\n💳 *${order?.credits ?? '?'} credits deducted.*`, { parse_mode: 'Markdown' });
+      await ctx.reply(
+        `🔔 *SMS Code Arrived\\!*\n` +
+        `━━━━━━━━━━━━━━━\n\n` +
+        `📱 Number: \`${order?.phoneNumber ?? '—'}\`\n` +
+        `🌐 Service: *${order?.service ?? '—'}*\n\n` +
+        `🔑 *Your Code:*\n` +
+        `\`\`\`\n${code}\n\`\`\`\n` +
+        `📄 _${full}_\n\n` +
+        `━━━━━━━━━━━━━━━\n` +
+        `💳 ${order?.credits ?? '?'} credits deducted`,
+        {
+          parse_mode: 'MarkdownV2',
+          ...Markup.inlineKeyboard([
+            [Markup.button.callback('📋 Copy Code', `copy_code_${orderId}`), Markup.button.callback('🔄 Order Again', `reagain_${order?.service ?? ''}_${order?.country ?? ''}`)],
+          ]),
+        },
+      );
     } else if (data.status === 2 || data.status === 'expired') {
       await ctx.reply('⏰ This order has expired.');
     } else {
@@ -1076,6 +1101,56 @@ bot.action(/^poll_(.+)$/, async (ctx) => {
         Markup.inlineKeyboard([[Markup.button.callback('🔄 Check Again', `poll_${orderId}`)]]));
       startAutoPolling(chatId, orderId, session);
     }
+  } catch (err) { await ctx.reply(`❌ ${errMsg(err)}`); }
+});
+
+// Copy code — resends code as plain text for easy long-press copy
+bot.action(/^copy_code_(.+)$/, async (ctx) => {
+  await ctx.answerCbQuery('📋 Code sent!');
+  const orderId = ctx.match[1];
+  const order   = smsOrders.get(orderId);
+  const code    = order?.smsCode ?? '—';
+  await ctx.reply(code);
+});
+
+// Order Again — restart order flow for same service/country
+bot.action(/^reagain_(.+)_(.+)$/, async (ctx) => {
+  const chatId  = ctx.chat!.id;
+  const session = sessions.get(chatId);
+  await ctx.answerCbQuery();
+  if (!session) return;
+  const service = ctx.match[1];
+  const country = ctx.match[2];
+  if (!service || !country) { await ctx.reply('❌ Service info missing.'); return; }
+  pending.set(chatId, { state: 'sms_confirm_reorder', data: { service, country } });
+  await ctx.reply(
+    `🔄 *Order Again*\n\n🌐 Service: *${service}*\n🌍 Country: *${country}*\n\nConfirm?`,
+    { parse_mode: 'Markdown', ...Markup.inlineKeyboard([[Markup.button.callback('✅ Yes, order', `reorder_${service}_${country}`), Markup.button.callback('❌ Cancel', 'menu_main')]]) },
+  );
+});
+
+bot.action(/^reorder_(.+)_(.+)$/, async (ctx) => {
+  const chatId  = ctx.chat!.id;
+  const session = sessions.get(chatId);
+  await ctx.answerCbQuery('⏳ Ordering...');
+  if (!session) return;
+  pending.delete(chatId);
+  const service = ctx.match[1];
+  const country = ctx.match[2];
+  try {
+    const res    = await smsPost('/request/number', { service, country, pricing_category: 'virtual_reg' });
+    const data   = res.data;
+    const number = data.number ?? data.phonenumber;
+    const orderId = String(data.order_id ?? data.id ?? Date.now());
+    if (!number) throw new Error(data.message ?? 'No number returned');
+    const credits = data.cost ? toCredits(parseFloat(data.cost)) : 10;
+    const order: SMSLocalOrder = { orderId, phoneNumber: number, service, country, credits, chatId, userId: session.userId, status: 'pending', charged: false };
+    smsOrders.set(orderId, order);
+    await ctx.reply(
+      `✅ *New Number Ready\\!*\n\n📱 \`${number}\`\n🌐 *${service}*\n\n⏳ Waiting for SMS\\.\\.\\.`,
+      { parse_mode: 'MarkdownV2', ...Markup.inlineKeyboard([[Markup.button.callback('🔄 Check Now', `poll_${orderId}`), Markup.button.callback('❌ Cancel', `cancel_${orderId}`)]]) },
+    );
+    startAutoPolling(chatId, orderId, session);
   } catch (err) { await ctx.reply(`❌ ${errMsg(err)}`); }
 });
 
