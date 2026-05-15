@@ -1175,6 +1175,20 @@ bot.action(/^copy_code_(.+)$/, async (ctx) => {
   await ctx.reply(code);
 });
 
+// Copy payment details (Binance ID / USDT / IBAN / CIH)
+bot.action(/^copy_pay_(BINANCE|USDT|IBAN|CIH)$/, async (ctx) => {
+  await ctx.answerCbQuery('📋 Copied!');
+  const method = ctx.match[1];
+  const values: Record<string, string> = {
+    BINANCE: process.env.PAYMENT_BINANCE_ID   ?? '',
+    USDT:    process.env.PAYMENT_USDT_ADDRESS ?? '',
+    IBAN:    process.env.PAYMENT_IBAN         ?? '',
+    CIH:     process.env.PAYMENT_CIH_BANK     ?? '',
+  };
+  const val = values[method];
+  if (val) await ctx.reply(val);
+});
+
 // Order Again — restart order flow for same service/country
 bot.action(/^reagain_(.+)_(.+)$/, async (ctx) => {
   const chatId  = ctx.chat!.id;
@@ -3247,26 +3261,44 @@ bot.on('text', async (ctx) => {
     const iban         = process.env.PAYMENT_IBAN          ?? '';
     const cihBank      = process.env.PAYMENT_CIH_BANK      ?? '';
 
-    let detailsMsg = '';
-    if (method === 'BINANCE') {
-      detailsMsg = binanceId
-        ? t(lang, 'payment_details_binance', { id: binanceId })
-        : t(lang, 'payment_details_missing');
-    } else if (method === 'USDT') {
-      detailsMsg = usdtAddress
-        ? t(lang, 'payment_details_usdt', { address: usdtAddress })
-        : t(lang, 'payment_details_missing');
-    } else if (method === 'IBAN') {
-      detailsMsg = iban
-        ? t(lang, 'payment_details_iban', { iban })
-        : t(lang, 'payment_details_missing');
-    } else if (method === 'CIH') {
-      detailsMsg = cihBank
-        ? t(lang, 'payment_details_cih', { account: cihBank })
-        : t(lang, 'payment_details_missing');
+    type PaymentInfo = { label: string; value: string; icon: string };
+    let payment: PaymentInfo | null = null;
+
+    if (method === 'BINANCE' && binanceId)
+      payment = { label: 'Binance ID', value: binanceId, icon: '💛' };
+    else if (method === 'USDT' && usdtAddress)
+      payment = { label: 'USDT TRC20', value: usdtAddress, icon: '💚' };
+    else if (method === 'IBAN' && iban)
+      payment = { label: 'IBAN', value: iban, icon: '🏦' };
+    else if (method === 'CIH' && cihBank)
+      payment = { label: 'CIH Bank', value: cihBank, icon: '🏧' };
+
+    if (!payment) {
+      await ctx.reply(t(lang, 'payment_details_missing'), cancelKb);
+      return;
     }
 
-    await ctx.reply(detailsMsg, { parse_mode: 'Markdown', ...cancelKb });
+    await ctx.reply(
+      `${payment.icon} *Send payment via ${payment.label}*\n\n` +
+      `━━━━━━━━━━━━━━━\n` +
+      `📋 *${payment.label}:*\n` +
+      `\`${payment.value}\`\n` +
+      `━━━━━━━━━━━━━━━\n\n` +
+      `*Steps:*\n` +
+      `1️⃣ Copy the ${payment.label} above\n` +
+      `2️⃣ Send the exact amount\n` +
+      `3️⃣ Come back here and enter the amount in USD\n` +
+      `4️⃣ Enter your TxID / reference number\n` +
+      `5️⃣ Send payment screenshot\n\n` +
+      `_Admin will approve within 24h_ ⏳`,
+      {
+        parse_mode: 'Markdown',
+        ...Markup.inlineKeyboard([
+          [Markup.button.callback(`📋 Copy ${payment.label}`, `copy_pay_${method}`)],
+        ]),
+      },
+    );
+    await ctx.reply('💵 Enter the amount in USD you sent (e.g. 10):', cancelKb);
     return;
   }
 
