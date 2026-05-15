@@ -3238,21 +3238,20 @@ bot.on('text', async (ctx) => {
     pending.delete(chatId);
     if (!session || session.role !== 'ADMIN') return;
     try {
-      const isId = /^\d+$/.test(text.trim());
-      const res = await makeApi(session.token).get(`/admin/users?${isId ? 'telegramId' : 'email'}=${encodeURIComponent(text.trim())}`);
-      const users = unwrap(res);
-      const user = Array.isArray(users) ? users[0] : users;
+      const res = await makeApi(session.token).get(`/admin/users?search=${encodeURIComponent(text.trim())}`);
+      const result = unwrap(res);
+      const userList: any[] = result.users ?? (Array.isArray(result) ? result : [result]);
+      const user = userList[0];
       if (!user) { await ctx.reply('❌ User not found.'); return; }
-      const purchases = [...digitalPurchases.entries()]
-        .filter(([cid]) => String(cid) === String(user.telegramId))
-        .flatMap(([, ps]) => ps);
+      const balanceCredits = user.balance ?? 0;
+      const balanceUsd = (balanceCredits / 100).toFixed(2);
       await ctx.reply(
         `👤 *User Info*\n\n` +
         `📧 Email: \`${user.email}\`\n` +
-        `🆔 Telegram: \`${user.telegramId || '—'}\`\n` +
-        `💰 Balance: *${((user.balance ?? 0) / 100).toFixed(2)} credits*\n` +
+        `💰 Balance: *${balanceCredits} credits* (≈ $${balanceUsd})\n` +
+        `📋 Orders: *${user._count?.orders ?? 0}*\n` +
         `📅 Joined: ${user.createdAt ? new Date(user.createdAt).toLocaleDateString() : '—'}\n` +
-        `🛒 Digital purchases: *${purchases.length}*`,
+        `✉️ Verified: ${user.isEmailVerified ? '✅' : '❌'}`,
         { parse_mode: 'Markdown', ...Markup.inlineKeyboard([[Markup.button.callback('💰 Add Balance', `adm_addbal_user_${user.id}`)]]) }
       );
     } catch {
