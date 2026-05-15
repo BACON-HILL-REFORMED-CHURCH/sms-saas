@@ -49,17 +49,22 @@ const translations: Record<Lang, Record<string, string>> = {
     digital_no_products:  '📭 No products in this category yet.',
     digital_out_of_stock: '❌ Out of stock. Check back later!',
     digital_confirm:
-      '🛒 *Confirm Purchase*\n\n' +
-      '📦 *{name}*\n{desc}\n' +
-      '💰 Price: *{price} credits*\n' +
-      '📊 Stock: {stock} available\n' +
-      '💳 Your balance: *{balance} credits*',
-    digital_btn_buy:   '✅ Buy Now',
+      '━━━━━━━━━━━━━━━━━\n' +
+      '🛒 *{name}*\n' +
+      '━━━━━━━━━━━━━━━━━\n\n' +
+      '{desc}' +
+      '💰 Price: {price}\n' +
+      '📦 In stock: *{stock}* available\n' +
+      '💳 Your balance: *{balance} credits*\n\n' +
+      '_Tap Buy Now to confirm your order_',
+    digital_btn_buy:   '🛒 Buy Now',
     digital_success:
-      '✅ *Purchase Successful!*\n\n' +
-      '📦 {name}\n\n' +
-      '📩 *Your credentials:*\n`{credentials}`\n\n' +
-      '_Keep these safe — shown only once!_',
+      '━━━━━━━━━━━━━━━━━\n' +
+      '✅ *Purchase Successful!*\n' +
+      '━━━━━━━━━━━━━━━━━\n\n' +
+      '📦 *{name}*\n\n' +
+      '🔑 *Your credentials:*\n`{credentials}`\n\n' +
+      '⚠️ _Save these — shown only once!_',
     digital_no_balance:
       '❌ *Insufficient balance*\n\n' +
       'Need: *{price} credits*\nYou have: *{balance} credits*\n\n' +
@@ -195,11 +200,19 @@ const translations: Record<Lang, Record<string, string>> = {
     digital_no_products:  '📭 لا توجد منتجات في هذه الفئة حالياً.',
     digital_out_of_stock: '❌ نفد المخزون. تحقق لاحقاً!',
     digital_confirm:
-      '🛒 *تأكيد الشراء*\n\n📦 *{name}*\n{desc}\n' +
-      '💰 السعر: *{price} كريديت*\n📊 المتوفر: {stock}\n💳 رصيدك: *{balance} كريديت*',
-    digital_btn_buy:   '✅ اشترِ الآن',
+      '━━━━━━━━━━━━━━━━━\n' +
+      '🛒 *{name}*\n' +
+      '━━━━━━━━━━━━━━━━━\n\n' +
+      '{desc}' +
+      '💰 السعر: {price}\n' +
+      '📦 المتوفر: *{stock}*\n💳 رصيدك: *{balance} كريديت*\n\n' +
+      '_اضغط اشترِ الآن للتأكيد_',
+    digital_btn_buy:   '🛒 اشترِ الآن',
     digital_success:
-      '✅ *تمت عملية الشراء!*\n\n📦 {name}\n\n📩 *بياناتك:*\n`{credentials}`\n\n_احتفظ بها في مكان آمن!_',
+      '━━━━━━━━━━━━━━━━━\n' +
+      '✅ *تمت عملية الشراء!*\n' +
+      '━━━━━━━━━━━━━━━━━\n\n' +
+      '📦 *{name}*\n\n🔑 *بياناتك:*\n`{credentials}`\n\n⚠️ _احتفظ بها — تُعرض مرة واحدة فقط!_',
     digital_no_balance:
       '❌ *رصيد غير كافٍ*\n\nتحتاج: *{price} كريديت*\nلديك: *{balance} كريديت*\n\nاضغط 💳 إيداع للشحن.',
 
@@ -311,11 +324,19 @@ const translations: Record<Lang, Record<string, string>> = {
     digital_no_products:  '📭 Aucun produit disponible dans cette catégorie.',
     digital_out_of_stock: '❌ Rupture de stock. Revenez plus tard!',
     digital_confirm:
-      '🛒 *Confirmer l\'Achat*\n\n📦 *{name}*\n{desc}\n' +
-      '💰 Prix: *{price} crédits*\n📊 Stock: {stock} restants\n💳 Votre solde: *{balance} crédits*',
-    digital_btn_buy:   '✅ Acheter',
+      '━━━━━━━━━━━━━━━━━\n' +
+      '🛒 *{name}*\n' +
+      '━━━━━━━━━━━━━━━━━\n\n' +
+      '{desc}' +
+      '💰 Prix: {price}\n' +
+      '📦 Stock: *{stock}* disponibles\n💳 Votre solde: *{balance} crédits*\n\n' +
+      '_Appuyez sur Acheter pour confirmer_',
+    digital_btn_buy:   '🛒 Acheter',
     digital_success:
-      '✅ *Achat Réussi!*\n\n📦 {name}\n\n📩 *Vos identifiants:*\n`{credentials}`\n\n_Gardez-les en sécurité!_',
+      '━━━━━━━━━━━━━━━━━\n' +
+      '✅ *Achat Réussi!*\n' +
+      '━━━━━━━━━━━━━━━━━\n\n' +
+      '📦 *{name}*\n\n🔑 *Vos identifiants:*\n`{credentials}`\n\n⚠️ _Conservez-les — affichés une seule fois!_',
     digital_no_balance:
       '❌ *Solde insuffisant*\n\nNécessaire: *{price} crédits*\nVous avez: *{balance} crédits*\n\nAppuyez sur 💳 Dépôt pour recharger.',
 

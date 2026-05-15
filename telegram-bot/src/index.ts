@@ -325,22 +325,22 @@ function startPaymentPolling(uuid: string) {
 
 // ── Digital Store categories ──────────────────────────────────
 const DIGITAL_CATEGORIES = [
-  { id: 'email',       emoji: '📧', label: 'Email Accounts' },
-  { id: 'social',      emoji: '📱', label: 'Social Media' },
-  { id: 'streaming',   emoji: '🎬', label: 'Streaming' },
+  { id: 'email',       emoji: '📩', label: 'Email Accounts' },
+  { id: 'social',      emoji: '📲', label: 'Social Media' },
+  { id: 'streaming',   emoji: '🍿', label: 'Streaming' },
   { id: 'gaming',      emoji: '🎮', label: 'Gaming' },
-  { id: 'software',    emoji: '🔑', label: 'Software Licenses' },
-  { id: 'vpn',         emoji: '🔒', label: 'VPN' },
-  { id: 'office',      emoji: '💼', label: 'Office 365' },
-  { id: 'iptv',        emoji: '📺', label: 'IPTV' },
-  { id: 'gemini',      emoji: '✨', label: 'Gemini PRO' },
-  { id: 'higgsfield',  emoji: '🎥', label: 'Higgsfield' },
-  { id: 'adobe',       emoji: '🎨', label: 'Adobe' },
-  { id: 'supergrok',   emoji: '🤖', label: 'Super Grok' },
+  { id: 'software',    emoji: '💿', label: 'Software Licenses' },
+  { id: 'vpn',         emoji: '🛡️', label: 'VPN' },
+  { id: 'office',      emoji: '🪟', label: 'Office 365' },
+  { id: 'iptv',        emoji: '📡', label: 'IPTV' },
+  { id: 'gemini',      emoji: '💠', label: 'Gemini PRO' },
+  { id: 'higgsfield',  emoji: '🎞️', label: 'Higgsfield' },
+  { id: 'adobe',       emoji: '🔴', label: 'Adobe' },
+  { id: 'supergrok',   emoji: '⚡', label: 'Super Grok' },
   { id: 'capcut',      emoji: '✂️', label: 'CapCut Pro' },
-  { id: 'elevenlabs',  emoji: '🎙️', label: 'ElevenLabs' },
-  { id: 'googleads',   emoji: '🟢', label: 'Google Ads' },
-  { id: 'facebookads', emoji: '🔵', label: 'Facebook Ads' },
+  { id: 'elevenlabs',  emoji: '🔊', label: 'ElevenLabs' },
+  { id: 'googleads',   emoji: '🔍', label: 'Google Ads' },
+  { id: 'facebookads', emoji: '📘', label: 'Facebook Ads' },
   { id: 'tiktokads',   emoji: '🎵', label: 'TikTok Ads' },
 ] as const;
 
@@ -2070,8 +2070,9 @@ bot.action(/^dprod_(.+)$/, async (ctx) => {
       return;
     }
 
+    const catEmoji = DIGITAL_CATEGORIES.find(c => c.id === product.category)?.emoji ?? '📦';
     const desc = product.description ? `_${product.description}_\n\n` : '';
-    const caption = t(lang, 'digital_confirm', { name: product.name, desc, price: priceLabel, stock: qty, balance });
+    const caption = t(lang, 'digital_confirm', { name: `${catEmoji} ${product.name}`, desc, price: priceLabel, stock: qty, balance });
     const replyMarkup = Markup.inlineKeyboard([
       [
         Markup.button.callback(t(lang, 'digital_btn_buy'), `dbuy_${productId}`),
