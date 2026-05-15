@@ -3290,12 +3290,14 @@ bot.on('text', async (ctx) => {
       `3️⃣ Come back here and enter the amount in USD\n` +
       `4️⃣ Enter your TxID / reference number\n` +
       `5️⃣ Send payment screenshot\n\n` +
-      `_Admin will approve within 24h_ ⏳`,
+      `_Admin will approve within 15 min_ ⏳`,
       {
         parse_mode: 'Markdown',
-        ...Markup.inlineKeyboard([
-          [Markup.button.callback(`📋 Copy ${payment.label}`, `copy_pay_${method}`)],
-        ]),
+        reply_markup: {
+          inline_keyboard: [
+            [{ text: `📋 Copy ${payment.label}`, copy_text: { text: payment.value } }],
+          ],
+        },
       },
     );
     await ctx.reply('💵 Enter the amount in USD you sent (e.g. 10):', cancelKb);
