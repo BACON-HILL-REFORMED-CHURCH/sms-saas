@@ -1833,11 +1833,22 @@ bot.action('adm_stats', async (ctx) => {
     const revenueUsd      = (totalRevenueCents / CREDITS_PER_USD).toFixed(2);
     const todayRevenueUsd = (todayRevenueCents  / CREDITS_PER_USD).toFixed(2);
 
-    // Top SMS services
-    const topSms: { service: string; count: number }[] = s.topServices ?? [];
-    const topSmsLine = topSms.length
-      ? topSms.map((t, i) => `   ${i + 1}. \`${t.service}\` — *${t.count}* orders`).join('\n')
-      : '   No data yet';
+    // Top products — merge SMS + digital
+    const topSms: { name: string; count: number }[] = (s.topServices ?? []).map((t: any) => ({ name: t.service, count: t.count }));
+    const topDigital: { name: string; count: number }[] = [...digitalProducts.values()]
+      .map(p => ({ name: p.name, count: p.stock.filter((i: any) => i.soldTo).length }))
+      .filter(p => p.count > 0);
+    const topAll = [...topSms, ...topDigital]
+      .reduce((acc: { name: string; count: number }[], cur) => {
+        const existing = acc.find(x => x.name === cur.name);
+        if (existing) existing.count += cur.count; else acc.push({ ...cur });
+        return acc;
+      }, [])
+      .sort((a, b) => b.count - a.count)
+      .slice(0, 5);
+    const topLine = topAll.length
+      ? topAll.map((t, i) => `   ${i + 1}. \`${t.name}\` — *${t.count}* sales`).join('\n')
+      : '   No sales yet';
 
     const now = new Date().toLocaleString('en-GB', { timeZone: 'Africa/Casablanca', day:'2-digit', month:'short', hour:'2-digit', minute:'2-digit' });
 
@@ -1854,8 +1865,8 @@ bot.action('adm_stats', async (ctx) => {
       `💰 *Revenue*\n` +
       `   Today: *$${todayRevenueUsd}*\n` +
       `   Total: *$${revenueUsd}*\n\n` +
-      `🏆 *Top SMS Services*\n` +
-      `${topSmsLine}\n\n` +
+      `🏆 *Top Products*\n` +
+      `${topLine}\n\n` +
       `🛒 *Digital Store*\n` +
       `   Products: *${totalProducts}*  ·  Available: *${availableItems}*  ·  Sold: *${soldItems}*\n` +
       `   📅 Active subs: *${activeSubs}* _(VPN / IPTV / Office)_\n\n` +
