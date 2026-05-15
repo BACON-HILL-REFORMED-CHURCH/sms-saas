@@ -361,10 +361,11 @@ function getKeyboard(chatId: number, role: string) {
     [t(lang, 'btn_digital_store'), t(lang, 'btn_orders')],
     [t(lang, 'btn_coupon'),        t(lang, 'btn_support')],
     [t(lang, 'btn_referral'),      t(lang, 'btn_profile')],
+    ['🌍 Language',                t(lang, 'btn_logout')],
     role === 'ADMIN'
-      ? [t(lang, 'btn_admin'), t(lang, 'btn_logout')]
-      : [t(lang, 'btn_logout')],
-  ];
+      ? [t(lang, 'btn_admin')]
+      : [],
+  ].filter(r => r.length > 0);
 
   if (appUrl) {
     rows.unshift([Markup.button.webApp('🌐 Open App', appUrl)]);
@@ -559,7 +560,6 @@ async function showProfile(ctx: any, session: UserSession) {
         parse_mode: 'Markdown',
         ...Markup.inlineKeyboard([
           [Markup.button.callback(optOutLabel, 'toggle_broadcast')],
-          [Markup.button.callback('🌍 Change Language', 'change_lang')],
           [Markup.button.callback('🚪 Logout', 'do_logout')],
         ]),
       },
@@ -2793,6 +2793,15 @@ bot.on('text', async (ctx) => {
     if (text === t(lang, 'btn_coupon'))   return showRedeemCoupon(ctx);
     if (text === t(lang, 'btn_referral')) return showReferral(ctx);
     if (text === t(lang, 'btn_profile'))  return showProfile(ctx, session);
+    if (text === '🌍 Language') {
+      return ctx.reply(
+        '🌍 *Choose your language*\nاختر لغتك\nChoisissez votre langue',
+        { parse_mode: 'Markdown', ...Markup.inlineKeyboard([
+          [Markup.button.callback('English 🇬🇧', 'lang_en'), Markup.button.callback('Français 🇫🇷', 'lang_fr')],
+          [Markup.button.callback('عربي 🇸🇦', 'lang_ar'),   Markup.button.callback('Indonesia 🇮🇩', 'lang_id')],
+        ]) },
+      );
+    }
     if (text === '📊 My Purchases')       return showPurchaseHistory(ctx, chatId);
     if (text === t(lang, 'btn_admin') && session.role === 'ADMIN') {
       await ctx.reply('🔧 *Admin Panel*', {
