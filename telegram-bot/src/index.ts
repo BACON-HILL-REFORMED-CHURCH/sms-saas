@@ -2237,7 +2237,8 @@ const ADMIN_TG_IDS = (process.env.ADMIN_TELEGRAM_IDS ?? '')
 function isTgAdmin(id: number) { return ADMIN_TG_IDS.includes(id); }
 
 async function showAdminRecharges(ctx: any) {
-  if (!isTgAdmin(ctx.from!.id)) {
+  const isAdmin = isTgAdmin(ctx.from!.id) || sessions.get(ctx.chat!.id)?.role === 'ADMIN';
+  if (!isAdmin) {
     await ctx.reply('❌ Unauthorized.');
     return;
   }
@@ -2315,7 +2316,7 @@ bot.command('deposit', async (ctx) => {
 });
 
 bot.action(/^rch_approve_(.+)$/, async (ctx) => {
-  if (!isTgAdmin(ctx.from!.id)) { await ctx.answerCbQuery('❌ Unauthorized'); return; }
+  if (!isTgAdmin(ctx.from!.id) && sessions.get(ctx.chat!.id)?.role !== 'ADMIN') { await ctx.answerCbQuery('❌ Unauthorized'); return; }
   const id = ctx.match[1];
   try {
     await makeApi(botAdminToken!).patch(`/recharge/admin/${id}/review`, { status: 'APPROVED' });
@@ -2329,7 +2330,7 @@ bot.action(/^rch_approve_(.+)$/, async (ctx) => {
 });
 
 bot.action(/^rch_reject_(.+)$/, async (ctx) => {
-  if (!isTgAdmin(ctx.from!.id)) { await ctx.answerCbQuery('❌ Unauthorized'); return; }
+  if (!isTgAdmin(ctx.from!.id) && sessions.get(ctx.chat!.id)?.role !== 'ADMIN') { await ctx.answerCbQuery('❌ Unauthorized'); return; }
   const id = ctx.match[1];
   pending.set(ctx.chat!.id, { state: 'adm_rch_reject', data: { id } });
   await ctx.answerCbQuery();
