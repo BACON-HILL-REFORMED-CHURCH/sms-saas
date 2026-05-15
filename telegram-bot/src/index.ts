@@ -1638,15 +1638,67 @@ bot.action('adm_stats', async (ctx) => {
   if (!session || session.role !== 'ADMIN') { await ctx.answerCbQuery(); return; }
   await ctx.answerCbQuery();
   try {
-    const res = await makeApi(session.token).get('/admin/stats');
-    const s   = unwrap(res);
+    // Fetch platform stats + recharge list in parallel
+    const [statsRes, rchRes] = await Promise.allSettled([
+      makeApi(session.token).get('/admin/stats'),
+      makeApi(botAdminToken ?? session.token).get('/recharge/admin', { params: { status: 'PENDING', limit: 100 } }),
+    ]);
+
+    const s = statsRes.status === 'fulfilled' ? unwrap(statsRes.value) : {};
+
+    // Pending recharges count
+    const rchData = rchRes.status === 'fulfilled' ? rchRes.value.data?.data ?? rchRes.value.data ?? [] : [];
+    const pendingRecharges: number = Array.isArray(rchData) ? rchData.length : 0;
+
+    // Digital store stats
+    const allProducts = [...digitalProducts.values()];
+    const totalProducts   = allProducts.length;
+    const totalStockItems = allProducts.reduce((n, p) => n + p.stock.length, 0);
+    const soldItems       = allProducts.reduce((n, p) => n + p.stock.filter(i => i.soldTo).length, 0);
+    const availableItems  = totalStockItems - soldItems;
+
+    // Active subscriptions = sold VPN / IPTV / Office 365 items
+    const subCatIds = ['vpn', 'office365', 'iptv', 'streaming'];
+    const activeSubs = allProducts
+      .filter(p => subCatIds.includes(p.category))
+      .reduce((n, p) => n + p.stock.filter(i => i.soldTo).length, 0);
+
+    // Support tickets
+    const openTickets   = [...supportTickets.values()].filter(t => t.status === 'open').length;
+    const closedTickets = [...supportTickets.values()].filter(t => t.status === 'closed').length;
+
+    // Revenue in USD
+    const totalRevenueCents: number = s.totalRevenue ?? 0;
+    const revenueUsd = (totalRevenueCents / CREDITS_PER_USD).toFixed(2);
+
+    const now = new Date().toLocaleString('en-GB', { timeZone: 'Africa/Casablanca', day:'2-digit', month:'short', hour:'2-digit', minute:'2-digit' });
+
     await ctx.reply(
-      `📊 *Platform Statistics*\n\n` +
-      `👥 Users: *${s.totalUsers??0}*\n📋 Orders: *${s.totalOrders??0}*\n✅ Completed: *${s.receivedOrders??0}*\n` +
-      `💰 Revenue: *${s.totalRevenue??0}* credits (≈ $${((s.totalRevenue??0) / CREDITS_PER_USD).toFixed(2)} USD)\n\n` +
-      `🎟️ Coupons: *${coupons.size}*\n👥 Referrals: *${referrals.size}*\n` +
-      `📱 SMS Orders (session): *${smsOrders.size}*\n🔔 Polling: *${activePolls.size}*`,
-      { parse_mode:'Markdown' },
+      `📊 *Admin Dashboard*\n` +
+      `🕐 _${now}_\n` +
+      `━━━━━━━━━━━━━━━━━\n\n` +
+      `👥 *Users*\n` +
+      `   Total registered: *${s.totalUsers ?? 0}*\n\n` +
+      `📋 *Orders*\n` +
+      `   Total SMS orders: *${s.totalOrders ?? 0}*\n` +
+      `   Pending SMS: *${s.pendingOrders ?? 0}*\n\n` +
+      `💳 *Recharges*\n` +
+      `   Awaiting approval: *${pendingRecharges}*\n\n` +
+      `💰 *Revenue*\n` +
+      `   Total: *${totalRevenueCents} credits* (~$${revenueUsd})\n\n` +
+      `🛒 *Digital Store*\n` +
+      `   Products: *${totalProducts}* | Stock: *${availableItems}* available / *${soldItems}* sold\n` +
+      `   📅 Active subscriptions: *${activeSubs}* _(VPN / IPTV / Office)_\n\n` +
+      `🎫 *Support Tickets*\n` +
+      `   Open: *${openTickets}* | Closed: *${closedTickets}*`,
+      {
+        parse_mode: 'Markdown',
+        ...Markup.inlineKeyboard([
+          [Markup.button.callback('📋 Review Recharges', 'adm_review'), Markup.button.callback('🎫 Tickets', 'adm_tickets')],
+          [Markup.button.callback('📅 Subscriptions', 'adm_subscriptions'), Markup.button.callback('🔍 Search User', 'adm_search_user')],
+          [Markup.button.callback('🔄 Refresh', 'adm_stats')],
+        ]),
+      },
     );
   } catch (err) { await ctx.reply(`❌ ${errMsg(err)}`); }
 });
