@@ -82,6 +82,7 @@ let flashSale: { percent: number; endsAt: string } | null = null;
 const errorAlertTimers  = new Map<string, number>();
 const supportTickets    = new Map<string, SupportTicket>();
 const digitalPurchases  = new Map<number, DigitalPurchase[]>(); // chatId → purchases
+const rechargeChatIds   = new Map<string, number>();           // rechargeId → chatId (for user notifications)
 
 let scheduledBroadcast: {
   message: string; photoUrl?: string;
@@ -513,8 +514,31 @@ for (const [action, label] of Object.entries(LANG_LABELS)) {
 
 bot.command('help', async (ctx) => {
   await ctx.reply(
-    t(getLang(ctx.chat.id), 'help_text', { bonus: REFERRAL_BONUS }),
-    { parse_mode: 'Markdown' },
+    `❓ *FAQ — Frequently Asked Questions*\n\n` +
+    `━━━━━━━━━━━━━━━━━\n\n` +
+    `💰 *Kifash ndeposi / nrecharge?*\n` +
+    `➜ Gles 💳 Deposit wla 💳 Recharge — khtar method (Binance, USDT, IBAN, CIH) w sifet l proof.\n\n` +
+    `📱 *Kifash nshri number dyal SMS?*\n` +
+    `➜ Gles 📱 Buy Number — khtar service (WhatsApp, Telegram...) w country — bot ghadi yb3at lik number w code automatique.\n\n` +
+    `🛒 *Kifash nshri product digital?*\n` +
+    `➜ Gles 🛒 Digital Store — khtar category — khtar product — gles Buy Now.\n\n` +
+    `⏳ *Ch7al kaytakhad recharge?*\n` +
+    `➜ 3adatan bin 5 d9aye9 w 24 sa3a — 7asab l wa9t.\n\n` +
+    `🔐 *SMS code ma jatch?*\n` +
+    `➜ Sber — bot kaycheck automatique kol 5 secondes hta 17 d9i9a. Ida ma jatch, makaynach charge.\n\n` +
+    `💳 *Kifash n3ref ch7al 3andi f balance?*\n` +
+    `➜ Gles 💰 Balance men keyboard.\n\n` +
+    `🎟️ *Kifash nstamle coupon?*\n` +
+    `➜ Gles 🎟️ Redeem Coupon w kteb code.\n\n` +
+    `🆘 *Kayn mochkil?*\n` +
+    `➜ Gles 🎧 Support w ftah ticket — admin ghadi yredek.\n\n` +
+    `━━━━━━━━━━━━━━━━━`,
+    {
+      parse_mode: 'Markdown',
+      ...Markup.inlineKeyboard([
+        [Markup.button.callback('🎧 Open Support Ticket', 'btn_support')],
+      ]),
+    },
   );
 });
 
@@ -2682,9 +2706,24 @@ bot.action(/^rch_approve_confirm_(.+)$/, async (ctx) => {
   if (!isTgAdmin(ctx.from!.id) && sessions.get(ctx.chat!.id)?.role !== 'ADMIN') { await ctx.answerCbQuery('❌ Unauthorized'); return; }
   const id = ctx.match[1];
   try {
-    await makeApi(botAdminToken!).patch(`/recharge/admin/${id}/review`, { status: 'APPROVED' });
+    const res = await makeApi(botAdminToken!).patch(`/recharge/admin/${id}/review`, { status: 'APPROVED' });
+    const amount = res.data?.amount ?? res.data?.data?.amount;
+    const credits = amount ? Math.round(amount) : null;
     await ctx.answerCbQuery('✅ Approved!');
     await ctx.editMessageText(`✅ *Recharge Approved!*\n\nID: \`${id}\``, { parse_mode: 'Markdown' });
+    // Notify user
+    const userChatId = rechargeChatIds.get(String(id));
+    if (userChatId) {
+      try {
+        await bot.telegram.sendMessage(userChatId,
+          `✅ *Recharge Approved!*\n\n` +
+          `💰 ${credits ? `*+${credits} credits*` : 'Credits'} added to your balance!\n\n` +
+          `🛒 Happy shopping!`,
+          { parse_mode: 'Markdown' },
+        );
+        rechargeChatIds.delete(String(id));
+      } catch {}
+    }
   } catch (err: any) {
     await ctx.answerCbQuery('❌ Error');
     await ctx.reply(`❌ ${err?.response?.data?.message || err.message}`);
@@ -2722,6 +2761,19 @@ bot.action(/^rch_rej_r_(.+)_(txid|fake|amount|dup)$/, async (ctx) => {
     await makeApi(botAdminToken!).patch(`/recharge/admin/${id}/review`, { status: 'REJECTED', adminNote: reason });
     await ctx.answerCbQuery('❌ Rejected');
     await ctx.editMessageText(`❌ *Recharge Rejected*\n\nID: \`${id}\`\nReason: ${reason}`, { parse_mode: 'Markdown' });
+    // Notify user
+    const userChatId = rechargeChatIds.get(String(id));
+    if (userChatId) {
+      try {
+        await bot.telegram.sendMessage(userChatId,
+          `❌ *Recharge Rejected*\n\n` +
+          `📋 Reason: _${reason}_\n\n` +
+          `💬 Questions? Open a support ticket.`,
+          { parse_mode: 'Markdown' },
+        );
+        rechargeChatIds.delete(String(id));
+      } catch {}
+    }
   } catch (err: any) {
     await ctx.answerCbQuery('❌ Error');
     await ctx.reply(`❌ ${err?.response?.data?.message || err.message}`);
@@ -2818,7 +2870,9 @@ bot.on('photo', async (ctx) => {
     };
     const txid = data.txid;
     try {
-      await makeApi(session.token).post('/recharge', { method: data.method, amountUsd: parseFloat(data.amount), txid });
+      const rchRes = await makeApi(session.token).post('/recharge', { method: data.method, amountUsd: parseFloat(data.amount), txid });
+      const rchId  = rchRes.data?.id ?? rchRes.data?.data?.id;
+      if (rchId) rechargeChatIds.set(String(rchId), chatId);
       await ctx.reply(t(lang, 'recharge_submitted', { method: methodDisplay[data.method] || data.method, amount: data.amount, txid }), { parse_mode: 'Markdown', ...getKeyboard(chatId, session.role) });
       const notifMsg = `💳 *New Recharge Request!*\n\n👤 Email: *${session.email}*\n🆔 Telegram ID: \`${chatId}\`\n🏦 Method: ${methodDisplay[data.method] || data.method}\n💰 Amount: *$${data.amount} USD*\n🔖 TxID: \`${txid}\`\n📸 *Proof attached*`;
       const notifMarkup = Markup.inlineKeyboard([[Markup.button.callback('📋 Review Recharges', 'adm_review')]]);
@@ -3618,6 +3672,17 @@ bot.on('text', async (ctx) => {
         adminNote: reason,
       });
       await ctx.reply(`❌ Recharge \`${data.id}\` rejected.\nReason: ${reason}`, { parse_mode: 'Markdown' });
+      // Notify user
+      const userChatId = rechargeChatIds.get(String(data.id));
+      if (userChatId) {
+        try {
+          await bot.telegram.sendMessage(userChatId,
+            `❌ *Recharge Rejected*\n\n📋 Reason: _${reason}_\n\n💬 Questions? Open a support ticket.`,
+            { parse_mode: 'Markdown' },
+          );
+          rechargeChatIds.delete(String(data.id));
+        } catch {}
+      }
     } catch (err: any) {
       await ctx.reply(`❌ Error: ${err?.response?.data?.message || err.message}`);
     }
