@@ -3295,7 +3295,7 @@ bot.on('text', async (ctx) => {
         parse_mode: 'Markdown',
         reply_markup: {
           inline_keyboard: [
-            [{ text: `📋 Copy ${payment.label}`, copy_text: { text: payment.value } }],
+            [{ text: `📋 Copy ${payment.label}`, copy_text: { text: payment.value } } as any],
           ],
         },
       },
