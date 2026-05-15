@@ -58,7 +58,7 @@ interface SMSCountry { ID: string; name: string; short_name: string; }
 interface SMSService  { ID: string; name: string; short_name: string; }
 
 interface DigitalItem    { id: string; credentials: string; soldTo?: number; soldAt?: Date; }
-interface DigitalProduct { id: string; category: string; name: string; description: string; price: number; stock: DigitalItem[]; }
+interface DigitalProduct { id: string; category: string; name: string; description: string; price: number; stock: DigitalItem[]; imageUrl?: string; }
 
 // ── Storage ───────────────────────────────────────────────────
 const sessions    = new Map<number, UserSession>();
@@ -1916,18 +1916,22 @@ bot.action(/^dprod_(.+)$/, async (ctx) => {
     }
 
     const desc = product.description ? `_${product.description}_\n\n` : '';
-    await ctx.reply(
-      t(lang, 'digital_confirm', { name: product.name, desc, price: priceLabel, stock: qty, balance }),
-      {
-        parse_mode: 'Markdown',
-        ...Markup.inlineKeyboard([
-          [
-            Markup.button.callback(t(lang, 'digital_btn_buy'), `dbuy_${productId}`),
-            Markup.button.callback('❌', 'digital_cancel'),
-          ],
-        ]),
-      },
-    );
+    const caption = t(lang, 'digital_confirm', { name: product.name, desc, price: priceLabel, stock: qty, balance });
+    const replyMarkup = Markup.inlineKeyboard([
+      [
+        Markup.button.callback(t(lang, 'digital_btn_buy'), `dbuy_${productId}`),
+        Markup.button.callback('❌', 'digital_cancel'),
+      ],
+    ]);
+    if (product.imageUrl) {
+      try {
+        await ctx.replyWithPhoto(product.imageUrl, { caption, parse_mode: 'Markdown', ...replyMarkup });
+      } catch {
+        await ctx.reply(caption, { parse_mode: 'Markdown', ...replyMarkup });
+      }
+    } else {
+      await ctx.reply(caption, { parse_mode: 'Markdown', ...replyMarkup });
+    }
   } catch (err) { await ctx.reply(`❌ ${errMsg(err)}`); }
 });
 
@@ -2194,6 +2198,7 @@ bot.action(/^adm_dp_editsel_(.+)$/, async (ctx) => {
         [Markup.button.callback('📝 Edit Name',        `adm_dp_ename_${productId}`)],
         [Markup.button.callback('💰 Edit Price',       `adm_dp_eprice_${productId}`)],
         [Markup.button.callback('📄 Edit Description', `adm_dp_edesc_${productId}`)],
+        [Markup.button.callback('🖼️ Edit Image',       `adm_dp_eimg_${productId}`)],
         [Markup.button.callback('📦 View Stock',       `adm_dp_vstock_${productId}`)],
       ]),
     },
@@ -2222,6 +2227,14 @@ bot.action(/^adm_dp_edesc_(.+)$/, async (ctx) => {
   await ctx.answerCbQuery();
   pending.set(chatId, { state: 'adm_dp_edit_desc', data: { productId } });
   await ctx.reply('📄 Enter new description (or /skip to clear):');
+});
+
+bot.action(/^adm_dp_eimg_(.+)$/, async (ctx) => {
+  const productId = ctx.match[1];
+  const chatId = ctx.chat!.id;
+  await ctx.answerCbQuery();
+  pending.set(chatId, { state: 'adm_dp_edit_img', data: { productId } });
+  await ctx.reply('🖼️ Send the image URL for this product (must start with https://):\n\nOr send /skip to remove the image.');
 });
 
 bot.action(/^adm_dp_vstock_(.+)$/, async (ctx) => {
@@ -2933,6 +2946,16 @@ bot.on('text', async (ctx) => {
     product.description = text === '/skip' ? '' : text.trim();
     saveDigitalProducts(digitalProducts);
     await ctx.reply(`✅ Description updated for *${product.name}*`, { parse_mode: 'Markdown' });
+    return;
+  }
+
+  if (state.state === 'adm_dp_edit_img') {
+    pending.delete(chatId);
+    const product = digitalProducts.get(data.productId);
+    if (!product) { await ctx.reply('❌ Product not found.'); return; }
+    product.imageUrl = text === '/skip' ? undefined : text.trim();
+    saveDigitalProducts(digitalProducts);
+    await ctx.reply(`✅ Image ${product.imageUrl ? 'updated' : 'removed'} for *${product.name}*`, { parse_mode: 'Markdown' });
     return;
   }
 
