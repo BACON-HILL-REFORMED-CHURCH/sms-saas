@@ -559,6 +559,7 @@ async function showProfile(ctx: any, session: UserSession) {
         parse_mode: 'Markdown',
         ...Markup.inlineKeyboard([
           [Markup.button.callback(optOutLabel, 'toggle_broadcast')],
+          [Markup.button.callback('🌍 Change Language', 'change_lang')],
           [Markup.button.callback('🚪 Logout', 'do_logout')],
         ]),
       },
@@ -572,6 +573,20 @@ bot.action('do_logout', async (ctx) => {
   sessions.delete(chatId);
   await ctx.answerCbQuery();
   await ctx.reply(t(lang, 'logged_out'), Markup.removeKeyboard());
+});
+
+bot.action('change_lang', async (ctx) => {
+  await ctx.answerCbQuery();
+  await ctx.reply(
+    '🌍 *Choose your language*\nاختر لغتك\nChoisissez votre langue',
+    {
+      parse_mode: 'Markdown',
+      ...Markup.inlineKeyboard([
+        [Markup.button.callback('English 🇬🇧', 'lang_en'), Markup.button.callback('Français 🇫🇷', 'lang_fr')],
+        [Markup.button.callback('عربي 🇸🇦', 'lang_ar'),   Markup.button.callback('Indonesia 🇮🇩', 'lang_id')],
+      ]),
+    },
+  );
 });
 
 bot.action('toggle_broadcast', async (ctx) => {
