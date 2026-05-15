@@ -2194,6 +2194,7 @@ bot.action(/^adm_dp_editsel_(.+)$/, async (ctx) => {
         [Markup.button.callback('📝 Edit Name',        `adm_dp_ename_${productId}`)],
         [Markup.button.callback('💰 Edit Price',       `adm_dp_eprice_${productId}`)],
         [Markup.button.callback('📄 Edit Description', `adm_dp_edesc_${productId}`)],
+        [Markup.button.callback('📦 View Stock',       `adm_dp_vstock_${productId}`)],
       ]),
     },
   );
@@ -2221,6 +2222,28 @@ bot.action(/^adm_dp_edesc_(.+)$/, async (ctx) => {
   await ctx.answerCbQuery();
   pending.set(chatId, { state: 'adm_dp_edit_desc', data: { productId } });
   await ctx.reply('📄 Enter new description (or /skip to clear):');
+});
+
+bot.action(/^adm_dp_vstock_(.+)$/, async (ctx) => {
+  const productId = ctx.match[1];
+  await ctx.answerCbQuery();
+  const product = digitalProducts.get(productId);
+  if (!product) { await ctx.reply('❌ Not found.'); return; }
+  const stock: DigitalItem[] = product.stock ?? [];
+  const available = stock.filter((s: DigitalItem) => !s.soldTo);
+  if (!stock.length) {
+    await ctx.reply(`📦 *${product.name}* — Stock: *0 items*\n\n_No credentials yet._`, { parse_mode: 'Markdown' });
+    return;
+  }
+  const list = stock.map((s: DigitalItem, i: number) => `${i + 1}. \`${s.credentials}\`${s.soldTo ? ' ✅sold' : ''}`).join('\n');
+  const chunks = [];
+  let chunk = `📦 *${product.name}* — Total: *${stock.length}* | Available: *${available.length}*\n\n`;
+  for (const line of list.split('\n')) {
+    if ((chunk + line + '\n').length > 3800) { chunks.push(chunk); chunk = ''; }
+    chunk += line + '\n';
+  }
+  if (chunk) chunks.push(chunk);
+  for (const c of chunks) await ctx.reply(c, { parse_mode: 'Markdown' });
 });
 
 // ════════════════════════════════════════════════════════════════
@@ -2800,7 +2823,8 @@ bot.on('text', async (ctx) => {
           await bot.telegram.sendMessage(
             adminId,
             `💳 *New Recharge Request!*\n\n` +
-            `👤 *${session.email}*\n` +
+            `👤 Email: *${session.email}*\n` +
+            `🆔 Telegram ID: \`${chatId}\`\n` +
             `🏦 Method: ${methodDisplay[data.method] || data.method}\n` +
             `💰 Amount: *$${data.amount} USD*\n` +
             `🔖 TxID: \`${text}\``,
