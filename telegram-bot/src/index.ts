@@ -2278,7 +2278,7 @@ bot.action(/^dcat_(.+)$/, async (ctx) => {
   const products = [...digitalProducts.values()].filter(p => p.category === catId);
 
   if (!products.length) {
-    await ctx.reply(t(lang, 'digital_no_products'));
+    await ctx.reply('⚠️ This product is not available right now.\n\nContact support and we will provide it within 12 hours 👉 @toopsellerr');
     return;
   }
 
