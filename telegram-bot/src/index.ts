@@ -349,6 +349,15 @@ const DIGITAL_CATEGORIES = [
   { id: 'googleads',   emoji: '🔍', label: 'Google Ads' },
   { id: 'facebookads', emoji: '📘', label: 'Facebook Ads' },
   { id: 'tiktokads',   emoji: '🎵', label: 'TikTok Ads' },
+  { id: 'semrush',     emoji: '🔍', label: 'Semrush' },
+  { id: 'ahrefs',      emoji: '🔗', label: 'Ahrefs' },
+  { id: 'canva',       emoji: '🎨', label: 'Canva' },
+  { id: 'helium10',    emoji: '🚀', label: 'Helium 10' },
+  { id: 'envato',      emoji: '🎭', label: 'Envato Elements' },
+  { id: 'seranking',   emoji: '📊', label: 'SE Ranking' },
+  { id: 'claudemax',   emoji: '🤖', label: 'Claude AI MAX 20X' },
+  { id: 'proxyfree',   emoji: '🌐', label: 'Proxy Free' },
+  { id: 'gwsnonprofit', emoji: '🏢', label: 'Google Workspace Nonprofit 300 User' },
 ] as const;
 
 function availableStock(p: DigitalProduct): DigitalItem[] {
@@ -3109,7 +3118,8 @@ bot.on('text', async (ctx) => {
   const state   = pending.get(chatId);
 
   // Keyboard shortcuts (labels are language-aware)
-  if (session && !state) {
+  if (state) { /* handled below */
+  } else if (session) {
     const lang = getLang(chatId);
     if (text === t(lang, 'btn_balance'))       return showBalance(ctx, session);
     if (text === t(lang, 'btn_deposit'))       return showDeposit(ctx);
