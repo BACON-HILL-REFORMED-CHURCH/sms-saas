@@ -3354,7 +3354,7 @@ bot.on('text', async (ctx) => {
   // ── ADMIN: eSIM — Edit Price ──
   if (state.state === 'adm_ep_edit_price') {
     const price = parseInt(text);
-    if (isNaN(price) || price <= 0) { await ctx.reply('❌ Enter price in cents (ex: 1500 = $15):'); return; }
+    if (isNaN(price) || price < 0) { await ctx.reply('❌ Enter price in cents (ex: 1500 = $15):'); return; }
     pending.delete(chatId);
     try {
       await makeApi(session?.token).patch(`/admin/esim/products/${data.productId}`, { price });
@@ -3422,7 +3422,7 @@ bot.on('text', async (ctx) => {
   }
   if (state.state === 'adm_esim_price') {
     const price = parseInt(text);
-    if (isNaN(price) || price <= 0) { await ctx.reply('❌ Enter price in cents (e.g. 1500 for $15):'); return; }
+    if (isNaN(price) || price < 0) { await ctx.reply('❌ Enter price in cents (e.g. 1500 for $15):'); return; }
     pending.delete(chatId);
     try {
       await makeApi(session?.token).post('/admin/esim/products', {
@@ -3670,7 +3670,7 @@ bot.on('text', async (ctx) => {
   }
   if (state.state === 'adm_dp_price') {
     const price = parseInt(text);
-    if (isNaN(price) || price <= 0) { await ctx.reply('❌ Enter a valid number (e.g. 500):'); return; }
+    if (isNaN(price) || price < 0) { await ctx.reply('❌ Enter a valid number (e.g. 500):'); return; }
     pending.delete(chatId);
     const id = `dp_${Date.now()}`;
     digitalProducts.set(id, { id, category: data.category, name: data.name, description: data.description, price, stock: [] });
@@ -3695,7 +3695,7 @@ bot.on('text', async (ctx) => {
   }
   if (state.state === 'adm_dp_edit_price') {
     const price = parseInt(text);
-    if (isNaN(price) || price <= 0) { await ctx.reply('❌ Enter a valid number (e.g. 500):'); return; }
+    if (isNaN(price) || price < 0) { await ctx.reply('❌ Enter a valid number (e.g. 500):'); return; }
     pending.delete(chatId);
     const product = digitalProducts.get(data.productId);
     if (!product) { await ctx.reply('❌ Product not found.'); return; }
