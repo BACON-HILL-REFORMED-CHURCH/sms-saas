@@ -974,7 +974,7 @@ bot.action(/^cbuy_(\d+)_(\d+)_(\d+)$/, async (ctx) => {
     if (!purchase || purchase.success === 0 || purchase.success === '0') {
       const reason = purchase?.message ?? purchase?.error ?? JSON.stringify(purchase) ?? 'No numbers available.';
       console.error(`[cbuy] Purchase failed for country=${countryId} service=${serviceId}:`, reason);
-      await ctx.reply(`❌ Purchase failed: ${reason}`);
+      await ctx.reply(`❌ No numbers available right now. Please try again later or contact support 👉 @toopsellerr`);
       notifyAdminError('SMSPool purchase failed', new Error(reason));
       return;
     }
