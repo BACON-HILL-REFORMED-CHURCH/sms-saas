@@ -3455,7 +3455,7 @@ bot.on('text', async (ctx) => {
     const activationCode = text === '/skip' ? '' : text.trim();
     pending.delete(chatId);
     try {
-      await makeApi(session?.token).post(`/admin/esim/products/${data.productId}/inventory`, {
+      await makeApi(session?.token).post(`/admin/esim/inventory`, {
         qrCodeData: data.qrCodeData,
         activationCode: activationCode || undefined,
       });
