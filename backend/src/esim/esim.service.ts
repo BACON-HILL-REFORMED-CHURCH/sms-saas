@@ -62,11 +62,7 @@ export class EsimService {
         orderBy: { createdAt: 'asc' },
       });
       if (!inventory) {
-        const pendingOrder = await tx.esimOrder.create({
-          data: { userId, productId, inventoryId: null, price: product.price, status: 'PENDING' },
-          include: { product: true },
-        });
-        return { ...pendingOrder, inventory: null, isPending: true };
+        throw new BadRequestException('No stock available for this eSIM plan');
       }
 
       // 4. Mark inventory as sold

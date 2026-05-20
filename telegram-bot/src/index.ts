@@ -1521,16 +1521,6 @@ bot.action(/^esim_b_(.+)$/, async (ctx) => {
   try {
     const res   = await makeApi(session.token).post(`/esim/purchase/${ctx.match[1]}`);
     const order = unwrap(res);
-    if (order.isPending) {
-      await ctx.reply(
-        `✅ *Order Received!*\n\n` +
-        `Your eSIM will be delivered within 30 minutes.\n` +
-        `We will send you the activation code here. 📲`,
-        { parse_mode:'Markdown' },
-      );
-      notifyAdminError(`🆕 New eSIM Order\nUser: ${chatId}\nProduct: ${order.product?.name ?? order.productId}\nStatus: PENDING`, new Error('manual fulfillment'));
-      return;
-    }
     const qr    = order.inventory?.qrCodeData ?? '';
     const act   = order.inventory?.activationCode ?? '';
     const f     = flag(order.product?.countryCode?.toLowerCase());
@@ -1541,7 +1531,7 @@ bot.action(/^esim_b_(.+)$/, async (ctx) => {
       `✅ *eSIM Purchased!*\n\n` +
       `${f} *${order.product?.country}*\n` +
       `📦 ${order.product?.gb}GB · ${order.product?.days} days\n` +
-      `💵 ${priceUsd % 1 === 0 ? priceUsd : priceUsd.toFixed(2)}${ppg ? ` (${ppg})` : ''}\n\n` +
+      `💵 $${priceUsd % 1 === 0 ? priceUsd : priceUsd.toFixed(2)}${ppg ? ` (${ppg})` : ''}\n\n` +
       `📱 *Activation Data:*\n\`\`\`\n${qr}\n\`\`\`` +
       (act ? `\n\n🔑 Code: \`${act}\`` : '') +
       `\n\n*📲 How to activate:*\n1. Settings → Cellular → Add eSIM\n2. Scan QR code\n3. Enable data roaming\n\n` +
