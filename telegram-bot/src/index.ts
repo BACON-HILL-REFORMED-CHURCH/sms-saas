@@ -1506,6 +1506,18 @@ bot.action(/^esim_c_(.+)$/, async (ctx) => {
 });
 
 bot.action('esim_soldout', async (ctx) => { await ctx.answerCbQuery('❌ Sold out — choose another plan'); });
+
+// ── Admin: Fulfill eSIM order ─────────────────────────────────
+bot.action(/^fulfill_(.+)_(\d+)$/, async (ctx) => {
+  const chatId  = ctx.chat!.id;
+  const session = sessions.get(chatId);
+  if (!session || session.role !== 'ADMIN') { await ctx.answerCbQuery(); return; }
+  const orderId    = ctx.match[1];
+  const userChatId = parseInt(ctx.match[2]);
+  pending.set(chatId, { state: 'fulfill_esim_code', data: { orderId, userChatId: String(userChatId) } });
+  await ctx.answerCbQuery();
+  await ctx.reply(`📤 *Send eSIM Code*\n\nPaste activation code for order \`${orderId}\`:`, { parse_mode: 'Markdown' });
+});
 bot.action('esim_back', async (ctx) => {
   const session = sessions.get(ctx.chat!.id);
   if (session) await showEsimProducts(ctx, session);
@@ -1521,9 +1533,46 @@ bot.action(/^esim_b_(.+)$/, async (ctx) => {
   try {
     const res   = await makeApi(session.token).post(`/esim/purchase/${ctx.match[1]}`);
     const order = unwrap(res);
-    const qr    = order.inventory?.qrCodeData ?? '';
-    const act   = order.inventory?.activationCode ?? '';
-    const f     = flag(order.product?.countryCode?.toLowerCase());
+
+    if (order.manualFulfillment || order.status === 'PENDING') {
+      const f = flag(order.product?.countryCode?.toLowerCase());
+      const priceUsd = (order.product?.price ?? 0) / 100;
+      await ctx.reply(
+        `✅ *Order Received!*\n\n` +
+        `${f} *${order.product?.country}*\n` +
+        `📦 ${order.product?.gb}GB · ${order.product?.days} days\n` +
+        `💵 $${priceUsd % 1 === 0 ? priceUsd : priceUsd.toFixed(2)}\n\n` +
+        `⏳ *Your eSIM will be delivered within 30 minutes.*\n` +
+        `📩 You will receive the activation code here.\n\n` +
+        `🆔 Order ID: \`${order.id}\``,
+        { parse_mode: 'Markdown' },
+      );
+      const notifyIds = adminChatId ? [adminChatId] : ADMIN_TG_IDS;
+      for (const adminId of notifyIds) {
+        try {
+          await bot.telegram.sendMessage(adminId,
+            `🆕 *New eSIM Order — Manual Fulfillment!*\n\n` +
+            `👤 User: ${session.email}\n` +
+            `🆔 Telegram ID: \`${chatId}\`\n` +
+            `${f} ${order.product?.country} — ${order.product?.gb}GB/${order.product?.days}d\n` +
+            `💰 $${priceUsd % 1 === 0 ? priceUsd : priceUsd.toFixed(2)}\n` +
+            `🆔 Order ID: \`${order.id}\`\n\n` +
+            `⚡ *Action required: Buy eSIM and send activation code!*`,
+            {
+              parse_mode: 'Markdown',
+              ...Markup.inlineKeyboard([[
+                Markup.button.callback('📤 Send eSIM Code', `fulfill_${order.id}_${chatId}`),
+              ]]),
+            },
+          );
+        } catch {}
+      }
+      return;
+    }
+
+    const qr  = order.inventory?.qrCodeData ?? '';
+    const act = order.inventory?.activationCode ?? '';
+    const f   = flag(order.product?.countryCode?.toLowerCase());
     const priceUsd = (order.product?.price ?? 0) / 100;
     const gb    = parseFloat(order.product?.gb) || 0;
     const ppg   = pricePerGb(priceUsd, gb);
@@ -1536,7 +1585,7 @@ bot.action(/^esim_b_(.+)$/, async (ctx) => {
       (act ? `\n\n🔑 Code: \`${act}\`` : '') +
       `\n\n*📲 How to activate:*\n1. Settings → Cellular → Add eSIM\n2. Scan QR code\n3. Enable data roaming\n\n` +
       `_⚠️ Screenshot this! You need it to activate._`,
-      { parse_mode:'Markdown' },
+      { parse_mode: 'Markdown' },
     );
     await rewardReferrer(chatId, session);
   } catch (err) { await ctx.reply(`❌ ${errMsg(err)}`); }
@@ -3925,6 +3974,23 @@ bot.on('text', async (ctx) => {
       `⚡ *Flash Sale Started!*\n\n🎯 *${data.percent}% discount* on all digital products\n⏳ Duration: *${hours}h*\n\nAll prices are now reduced!`,
       { parse_mode: 'Markdown' },
     );
+    return;
+  }
+
+  // ── ADMIN: Fulfill eSIM ──
+  if (state.state === 'fulfill_esim_code') {
+    pending.delete(chatId);
+    const userChatId = parseInt(data.userChatId);
+    try {
+      await bot.telegram.sendMessage(userChatId,
+        `✅ *eSIM Activation Code Ready!*\n\n` +
+        `🔑 *Your activation code:*\n\`\`\`\n${text}\n\`\`\`\n\n` +
+        `*📲 How to activate:*\n1. Settings → Cellular → Add eSIM\n2. Enter code manually\n3. Enable data roaming\n\n` +
+        `_⚠️ Screenshot this!_`,
+        { parse_mode: 'Markdown' },
+      );
+      await ctx.reply(`✅ Code sent to user successfully!`);
+    } catch (err) { await ctx.reply(`❌ ${errMsg(err)}`); }
     return;
   }
 
