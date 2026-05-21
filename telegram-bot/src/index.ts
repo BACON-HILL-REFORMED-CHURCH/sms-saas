@@ -19,7 +19,7 @@ import {
 
 // ── Config ────────────────────────────────────────────────────
 const BOT_TOKEN          = process.env.TELEGRAM_BOT_TOKEN!;
-const API_URL            = (process.env.API_URL ?? 'https://sms-saasbackend-production.up.railway.app').replace(/\/$/, '') + '/api/v1';
+const API_URL            = (process.env.API_URL ?? 'http://localhost:3001').replace(/\/$/, '') + '/api/v1';
 const SMSPOOL_KEY        = process.env.SMSPOOL_API_KEY ?? '';
 const MARKUP_PERCENT     = parseFloat(process.env.MARKUP_PERCENT ?? '50');
 const CREDITS_PER_USD    = 100;   // 100 credits = $1
