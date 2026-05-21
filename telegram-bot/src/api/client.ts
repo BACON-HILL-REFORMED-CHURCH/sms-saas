@@ -4,7 +4,7 @@ const API_URL = process.env.BACKEND_URL || 'http://localhost:3001/api/v1';
 
 export const api = axios.create({
   baseURL: API_URL,
-  timeout: 10000,
+  timeout: 30000,
 });
 
 export const setToken = (token: string) => {
