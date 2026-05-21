@@ -16,7 +16,7 @@ import { PrismaService } from '../prisma/prisma.service';
 import { MailService } from '../mail/mail.service';
 import { RegisterDto, LoginDto } from './dto/register.dto';
 
-const BCRYPT_ROUNDS = 12; // High enough for security, not too slow
+const BCRYPT_ROUNDS = 10; // High enough for security, not too slow
 
 @Injectable()
 export class AuthService {
