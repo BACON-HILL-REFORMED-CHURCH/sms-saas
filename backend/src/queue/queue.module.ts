@@ -11,6 +11,18 @@ import { SMS_QUEUE } from './sms.queue';
     BullModule.forRootAsync({
       inject: [ConfigService],
       useFactory: (config: ConfigService) => {
+        const url = process.env.REDIS_URL;
+        if (url) {
+          const parsed = new URL(url);
+          return {
+            connection: {
+              host: parsed.hostname,
+              port: parseInt(parsed.port, 10) || 6379,
+              password: parsed.password || undefined,
+              username: parsed.username || undefined,
+            },
+          };
+        }
         const host = config.get('REDIS_HOST', 'localhost');
         const port = config.get<number>('REDIS_PORT', 6379);
         const password = config.get('REDIS_PASSWORD') || undefined;
