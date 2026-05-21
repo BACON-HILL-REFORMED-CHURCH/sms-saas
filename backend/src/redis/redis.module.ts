@@ -1,7 +1,3 @@
-// ============================================================
-// RedisModule — global Redis client (caching + queues)
-// ============================================================
-
 import { Global, Module } from '@nestjs/common';
 import { ConfigService } from '@nestjs/config';
 import { RedisService } from './redis.service';
@@ -12,10 +8,11 @@ import { RedisService } from './redis.service';
     {
       provide: 'REDIS_OPTIONS',
       useFactory: (config: ConfigService) => {
+        const url = config.get('REDIS_URL');
+        if (url) return { url };
         const host = config.get('REDIS_HOST', 'localhost');
         const port = config.get<number>('REDIS_PORT', 6379);
         const password = config.get('REDIS_PASSWORD') || undefined;
-        // Upstash and other cloud Redis providers require TLS
         const useTls = host !== 'localhost' && host !== '127.0.0.1';
         return { host, port, password, ...(useTls ? { tls: {} } : {}) };
       },
