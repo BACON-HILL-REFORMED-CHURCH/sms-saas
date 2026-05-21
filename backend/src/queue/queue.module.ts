@@ -14,12 +14,16 @@ import { SMS_QUEUE } from './sms.queue';
         const url = process.env.REDIS_URL;
         if (url) {
           const parsed = new URL(url);
+          const isTLS = url.startsWith('rediss://');
           return {
             connection: {
               host: parsed.hostname,
               port: parseInt(parsed.port, 10) || 6379,
               password: parsed.password || undefined,
               username: parsed.username || undefined,
+              tls: isTLS ? {} : undefined,
+              maxRetriesPerRequest: null,
+              enableOfflineQueue: false,
             },
           };
         }
@@ -28,7 +32,12 @@ import { SMS_QUEUE } from './sms.queue';
         const password = config.get('REDIS_PASSWORD') || undefined;
         const useTls = host !== 'localhost' && host !== '127.0.0.1';
         return {
-          connection: { host, port, password, ...(useTls ? { tls: {} } : {}) },
+          connection: {
+            host, port, password,
+            ...(useTls ? { tls: {} } : {}),
+            maxRetriesPerRequest: null,
+            enableOfflineQueue: false,
+          },
         };
       },
     }),
