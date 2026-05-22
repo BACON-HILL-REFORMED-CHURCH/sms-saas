@@ -3505,6 +3505,7 @@ bot.on('text', async (ctx) => {
     pending.delete(chatId);
     try {
       await makeApi(session?.token).post(`/admin/esim/inventory`, {
+        productId: data.productId,
         qrCodeData: data.qrCodeData,
         activationCode: activationCode || undefined,
       });
