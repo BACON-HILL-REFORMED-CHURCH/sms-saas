@@ -1487,11 +1487,8 @@ bot.action(/^esim_c_(.+)$/, async (ctx) => {
       const priceUsd = p.price / 100;
       const gb       = parseFloat(p.gb) || 0;
       const ppg      = pricePerGb(priceUsd, gb);
-      const stock    = p.stock > 0;
-      const label    = stock
-        ? `${p.gb}GB · ${p.days}d · $${priceUsd % 1 === 0 ? priceUsd : priceUsd.toFixed(2)}${ppg ? ` (${ppg})` : ''}`
-        : `${p.gb}GB · ${p.days}d · ❌ Sold out`;
-      return [Markup.button.callback(label, stock ? `esim_b_${p.id}` : 'esim_soldout')];
+      const label = `${p.gb}GB · ${p.days}d · $${priceUsd % 1 === 0 ? priceUsd : priceUsd.toFixed(2)}${ppg ? ` (${ppg})` : ''}`;
+return [Markup.button.callback(label, `esim_b_${p.id}`)];
     });
     buttons.push([Markup.button.callback('🔙 Back', 'esim_tab_countries')]);
 
