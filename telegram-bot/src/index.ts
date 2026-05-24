@@ -2330,8 +2330,9 @@ bot.action(/^dcat_(.+)$/, async (ctx) => {
 
   const buttons = products.map(p => {
     const qty  = availableStock(p).length;
-    const icon = qty > 0 ? '🟢' : '🔴';
-    return [Markup.button.callback(`${icon} ${p.name} — ${p.price} cr (${qty} left)`, `dprod_${p.id}`)];
+    const priceUsd = (p.price / 100).toFixed(2);
+    const catEmoji = DIGITAL_CATEGORIES.find(c => c.id === p.category)?.emoji ?? '📦';
+    return [Markup.button.callback(`${catEmoji} $${priceUsd} | ${p.name} (${qty})`, `dprod_${p.id}`)];
   });
 
   await ctx.reply(
