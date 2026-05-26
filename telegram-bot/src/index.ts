@@ -1367,7 +1367,10 @@ async function showEsimProducts(ctx: any, session: UserSession) {
       );
       return;
     }
-    await ctx.reply(
+    await ctx.replyWithPhoto(
+  { url: 'https://i.ibb.co/1Y4F956Z/esim.jpg' },
+  {
+    caption:
       `🛰 *eSIM Store*\n\n` +
       `eSIM is a digital SIM card 📲\n` +
       `It's built into your smartphone — no need to insert anything.\n\n` +
@@ -1380,7 +1383,6 @@ async function showEsimProducts(ctx: any, session: UserSession) {
       `• Over 150+ countries in one bot 🌍\n\n` +
       `After purchase, you'll receive a QR code — scan it and connect!\n\n` +
       `Browse by:`,
-      {
         parse_mode: 'Markdown',
         ...Markup.inlineKeyboard([
           [
