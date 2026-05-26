@@ -24,7 +24,7 @@ const SMSPOOL_KEY        = process.env.SMSPOOL_API_KEY ?? '';
 const MARKUP_PERCENT     = parseFloat(process.env.MARKUP_PERCENT ?? '50');
 const CREDITS_PER_USD    = 100;   // 100 credits = $1
 const REFERRAL_BONUS     = parseInt(process.env.REFERRAL_BONUS ?? '100');
-const WELCOME_BONUS      = parseInt(process.env.WELCOME_BONUS  ?? '100');
+const WELCOME_BONUS      = parseInt(process.env.WELCOME_BONUS ?? '0');
 const POLL_INTERVAL      = 30_000;
 const POLL_MAX           = 20;
 const CRYPTOMUS_MERCHANT = process.env.CRYPTOMUS_MERCHANT_ID ?? '';
