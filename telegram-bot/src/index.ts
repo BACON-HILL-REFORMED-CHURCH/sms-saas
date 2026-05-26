@@ -1079,17 +1079,18 @@ function startAutoPolling(chatId: number, orderId: string, session: UserSession)
         if (order) await chargeForSms(order);
 
         await bot.telegram.sendMessage(chatId,
-          `🔔 *SMS Code Arrived\\!*\n` +
-          `━━━━━━━━━━━━━━━\n\n` +
-          `📱 Number: \`${order?.phoneNumber}\`\n` +
-          `🌐 Service: *${order?.service ?? '—'}*\n\n` +
-          `🔑 *Your Code:*\n` +
-          `\`\`\`\n${code}\n\`\`\`\n` +
-          `📄 _${full}_\n\n` +
-          `━━━━━━━━━━━━━━━\n` +
-          `💳 ${order?.credits} credits deducted`,
+          `🔔 *SMS Code Arrived!*\n` +
+              `━━━━━━━━━━━━━━━\n\n` +
+              `📱 Number: \`${order?.phoneNumber}\`\n` +
+              `🌐 Service: *${order?.service ?? '—'}*\n\n` +
+              `🔑 *Your Code:*\n` +
+              `\`\`\`\n${code}\n\`\`\`\n` +
+              `📄 _${full}_\n\n` +
+              `━━━━━━━━━━━━━━━\n` +
+              `💳 ${order?.credits} credits deducted`,
+          
           {
-            parse_mode: 'MarkdownV2',
+            parse_mode: 'Markdown',
             ...Markup.inlineKeyboard([
               [Markup.button.callback('📋 Copy Code', `copy_code_${orderId}`), Markup.button.callback('🔄 Order Again', `reagain_${order?.service ?? ''}_${order?.country ?? ''}`)],
             ]),
