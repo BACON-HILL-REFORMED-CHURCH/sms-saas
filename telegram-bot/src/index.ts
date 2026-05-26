@@ -1368,9 +1368,17 @@ async function showEsimProducts(ctx: any, session: UserSession) {
       return;
     }
     await ctx.reply(
-      `📡 *eSIM Store*\n\n` +
-      `🌐 Internet-only · No calls · Instant delivery\n` +
-      `💳 ${CREDITS_PER_USD} credits = $1\n\n` +
+      `🛰 *eSIM Store*\n\n` +
+      `eSIM is a digital SIM card 📲\n` +
+      `It's built into your smartphone — no need to insert anything.\n\n` +
+      `*Advantages:*\n` +
+      `• Instant activation ⚡️\n` +
+      `• Supported by most modern phones 📱\n` +
+      `• Perfect for travel ✈️\n` +
+      `• Fast 4G/5G internet 🚀\n` +
+      `• No KYC 🔓\n` +
+      `• Over 150+ countries in one bot 🌍\n\n` +
+      `After purchase, you'll receive a QR code — scan it and connect!\n\n` +
       `Browse by:`,
       {
         parse_mode: 'Markdown',
