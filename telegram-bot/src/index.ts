@@ -1352,7 +1352,7 @@ function getRegion(code: string): string {
 function pricePerGb(priceUsd: number, gb: number): string {
   if (!gb || gb <= 0) return '';
   const ppg = priceUsd / gb;
-  return ppg < 1 ? `$${ppg.toFixed(2)}/GB` : `$${Math.round(ppg)}/GB`;
+  return `$${ppg.toFixed(2)}/GB`;
 }
 
 async function showEsimProducts(ctx: any, session: UserSession) {
