@@ -2335,7 +2335,32 @@ bot.action(/^dcat_(.+)$/, async (ctx) => {
   const products = [...digitalProducts.values()].filter(p => p.category === catId);
 
  if (!products.length) {
+  await ctx.reply(
+    `⚠️ *This product is not available right now.*\n\nWant us to notify you?`,
+    {
+      parse_mode: 'Markdown',
+      ...Markup.inlineKeyboard([
+        [Markup.button.callback('🔔 Request this product', `demand_${catId}`)]
+      ])
+    }
+  );
+  return;
+}
+}
+
+
+  const buttons = products.map(p => {
+    const qty  = availableStock(p).length;
+    const priceUsd = (p.price / 100).toFixed(2);
+    const catEmoji = DIGITAL_CATEGORIES.find(c => c.id === p.category)?.emoji ?? '📦';
+    return [Markup.button.callback(`${catEmoji} $${priceUsd} | ${p.name} (${qty})`, `dprod_${p.id}`)];
+  });
+bot.action(/^demand_(.+)$/, async (ctx) => {
+  const catId = ctx.match[1];
+  const chatId = ctx.chat!.id;
   const user = ctx.from;
+  const cat = DIGITAL_CATEGORIES.find(c => c.id === catId);
+  await ctx.answerCbQuery('✅ Request sent!');
   if (adminChatId) {
     await bot.telegram.sendMessage(
       adminChatId,
@@ -2347,21 +2372,10 @@ bot.action(/^dcat_(.+)$/, async (ctx) => {
     );
   }
   await ctx.reply(
-    `⚠️ *This product is not available right now.*\n\n` +
-    `✅ Your request has been sent!\n` +
-    `We will contact you within 12 hours 👉 @toopsellerr`,
+    `✅ *Request sent!*\n\nWe will contact you within 12 hours 👉 @toopsellerr`,
     { parse_mode: 'Markdown' }
   );
-  return;
-}
-
-  const buttons = products.map(p => {
-    const qty  = availableStock(p).length;
-    const priceUsd = (p.price / 100).toFixed(2);
-    const catEmoji = DIGITAL_CATEGORIES.find(c => c.id === p.category)?.emoji ?? '📦';
-    return [Markup.button.callback(`${catEmoji} $${priceUsd} | ${p.name} (${qty})`, `dprod_${p.id}`)];
-  });
-
+});
   await ctx.reply(
     `${cat?.emoji} *${cat?.label}*\n\n${t(lang, 'digital_select_prod')}`,
     { parse_mode: 'Markdown', ...Markup.inlineKeyboard(buttons) },
