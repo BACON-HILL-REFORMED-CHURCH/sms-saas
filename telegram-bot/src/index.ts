@@ -2334,10 +2334,26 @@ bot.action(/^dcat_(.+)$/, async (ctx) => {
   const cat      = DIGITAL_CATEGORIES.find(c => c.id === catId);
   const products = [...digitalProducts.values()].filter(p => p.category === catId);
 
-  if (!products.length) {
-    await ctx.reply('⚠️ This product is not available right now.\n\nContact support and we will provide it within 12 hours 👉 @toopsellerr');
-    return;
+ if (!products.length) {
+  const user = ctx.from;
+  if (adminChatId) {
+    await bot.telegram.sendMessage(
+      adminChatId,
+      `🔔 *New Product Demand!*\n\n` +
+      `👤 User: @${user?.username ?? 'no username'}\n` +
+      `🆔 ID: ${chatId}\n` +
+      `📦 Product: *${cat?.label ?? catId}*`,
+      { parse_mode: 'Markdown' }
+    );
   }
+  await ctx.reply(
+    `⚠️ *This product is not available right now.*\n\n` +
+    `✅ Your request has been sent!\n` +
+    `We will contact you within 12 hours 👉 @toopsellerr`,
+    { parse_mode: 'Markdown' }
+  );
+  return;
+}
 
   const buttons = products.map(p => {
     const qty  = availableStock(p).length;
