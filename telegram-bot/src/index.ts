@@ -2937,12 +2937,15 @@ async function showAdminRecharges(ctx: any) {
         `🕐 ${created}`,
         {
           parse_mode: 'Markdown',
-          ...Markup.inlineKeyboard([
-            [
-              Markup.button.callback('✅ Approve', `rch_approve_${r.id}`),
-              Markup.button.callback('❌ Reject',  `rch_reject_${r.id}`),
-            ],
-          ]),
+         ...Markup.inlineKeyboard([
+  [
+    Markup.button.callback('✅ Approve', `rch_approve_${r.id}`),
+    Markup.button.callback('❌ Reject',  `rch_reject_${r.id}`),
+  ],
+  [
+    Markup.button.callback('✏️ Edit Amount', `rch_edit_${r.id}`),
+  ],
+]),
         }
       );
     }
