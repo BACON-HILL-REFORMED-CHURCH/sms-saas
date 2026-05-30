@@ -2954,7 +2954,33 @@ async function showAdminRecharges(ctx: any) {
     await ctx.reply(`❌ Error: ${err?.response?.data?.message || err.message}`);
   }
 }
+const pendingEdits = new Map<number, string>();
 
+bot.action(/^rch_edit_(.+)$/, async (ctx) => {
+  const id = ctx.match[1];
+  const chatId = ctx.chat!.id;
+  await ctx.answerCbQuery();
+  await ctx.reply(
+    `✏️ *Edit Amount*\n\nEnter correct amount in $ for request \`${id}\`:`,
+    { parse_mode: 'Markdown' }
+  );
+  pendingEdits.set(chatId, id);
+});
+
+bot.on('text', async (ctx, next) => {
+  const chatId = ctx.chat!.id;
+  if (!isTgAdmin(chatId)) return next();
+  const reqId = pendingEdits.get(chatId);
+  if (!reqId) return next();
+  const amount = parseFloat(ctx.message.text);
+  if (isNaN(amount)) {
+    await ctx.reply('❌ Invalid amount. Enter a number like: 5.00');
+    return;
+  }
+  pendingEdits.delete(chatId);
+  await makeApi(botAdminToken).post(`/recharge/approve/${reqId}`, { amount: Math.round(amount * 100) });
+  await ctx.reply(`✅ Amount updated to $${amount.toFixed(2)} and approved!`);
+});
 bot.command('admin',   (ctx) => showAdminRecharges(ctx));
 bot.action('adm_review', async (ctx) => { await ctx.answerCbQuery(); await showAdminRecharges(ctx); });
 
