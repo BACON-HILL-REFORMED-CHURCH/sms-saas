@@ -2337,15 +2337,15 @@ bot.action(/^dcat_(.+)$/, async (ctx) => {
 
  if (!products.length) {
   await ctx.reply(
-    `⚠️ *This product is not available right now.*\n\nWant us to notify you?`,
+    '⚠️ This product is not available right now.*\n\nWant us to notify you?',
     {
-      parse_mode: 'Markdown',
+     parse_mode: 'Markdown',
       ...Markup.inlineKeyboard([
         [Markup.button.callback('🔔 Request this product', `demand_${catId}`)]
       ])
     }
   );
-  return;
+  
 }
 }
 
