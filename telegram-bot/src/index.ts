@@ -358,6 +358,7 @@ const DIGITAL_CATEGORIES = [
   { id: 'claudemax',   emoji: '🤖', label: 'Claude AI MAX 20X' },
   { id: 'proxyfree',   emoji: '🌐', label: 'Proxy Free' },
   { id: 'gwsnonprofit', emoji: '🏢', label: 'Google Workspace Nonprofit 300 User' },
+  { id: 'Veo3GeminiPROGoogleOne2TBAccount1Months',      emoji: '📲', label: 'Veo 3 Gemini PRO Google One 2TB Account 1Months' },
 ] as const;
 
 function availableStock(p: DigitalProduct): DigitalItem[] {
