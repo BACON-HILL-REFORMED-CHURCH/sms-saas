@@ -333,7 +333,7 @@ function startPaymentPolling(uuid: string) {
 // ── Digital Store categories ──────────────────────────────────
 const DIGITAL_CATEGORIES = [
   { id: 'email',       emoji: '📩', label: '$Email Accounts' },
-  { id: 'streaming',   emoji: '🍿', label: 'Streaming' },
+  { id: 'CapCutProPrivate',   emoji: '🍿', label: 'CapCut Pro Private' },
   { id: 'gaming',      emoji: '🎮', label: 'Gaming' },
   { id: 'software',    emoji: '💿', label: 'Software Licenses' },
   { id: 'vpn',         emoji: '🛡️', label: 'VPN' },
