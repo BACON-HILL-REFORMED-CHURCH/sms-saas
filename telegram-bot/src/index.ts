@@ -358,6 +358,7 @@ const DIGITAL_CATEGORIES = [
   { id: 'proxyfree',   emoji: '🌐', label: 'Proxy Free' },
   { id: 'gwsnonprofit', emoji: '🏢', label: 'Google Workspace Nonprofit 300 User' },
   { id: 'gemini_family_2m', emoji: '✨', label: 'Google Gemini Pro - 2 Months (Family)' },
+  { id: 'github_student', emoji: '🎓', label: 'Github Student Pack' },
 ] as const;
 
 function availableStock(p: DigitalProduct): DigitalItem[] {
