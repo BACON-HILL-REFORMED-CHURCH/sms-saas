@@ -333,7 +333,6 @@ function startPaymentPolling(uuid: string) {
 // ── Digital Store categories ──────────────────────────────────
 const DIGITAL_CATEGORIES = [
   { id: 'email',       emoji: '📩', label: '$Email Accounts' },
-  { id: 'Veo3GeminiPROGoogleOne2TBAccount1Months',      emoji: '📲', label: 'Veo 3 Gemini PRO Google One 2TB Account 1Months' },
   { id: 'streaming',   emoji: '🍿', label: 'Streaming' },
   { id: 'gaming',      emoji: '🎮', label: 'Gaming' },
   { id: 'software',    emoji: '💿', label: 'Software Licenses' },
@@ -358,7 +357,7 @@ const DIGITAL_CATEGORIES = [
   { id: 'claudemax',   emoji: '🤖', label: 'Claude AI MAX 20X' },
   { id: 'proxyfree',   emoji: '🌐', label: 'Proxy Free' },
   { id: 'gwsnonprofit', emoji: '🏢', label: 'Google Workspace Nonprofit 300 User' },
-  { id: 'Veo3GeminiPROGoogleOne2TBAccount1Months',      emoji: '📲', label: 'Veo 3 Gemini PRO Google One 2TB Account 1Months' },
+  { id: 'gemini_family_2m', emoji: '✨', label: 'Google Gemini Pro - 2 Months (Family)' },
 ] as const;
 
 function availableStock(p: DigitalProduct): DigitalItem[] {
