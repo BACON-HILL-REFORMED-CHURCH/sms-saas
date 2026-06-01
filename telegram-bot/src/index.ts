@@ -3,7 +3,7 @@
 // Direct SMSPool API integration (no backend for SMS orders)
 // Backend used only for: Auth, Wallet, eSIM, Admin
 // ============================================================
-// fix: force redeploy v3
+// fix: force redeploy v4
 import { Telegraf, Markup } from 'telegraf';
 import axios from 'axios';
 import crypto from 'crypto';
