@@ -362,6 +362,8 @@ const DIGITAL_CATEGORIES = [
   { id: 'github_student', emoji: '🎓', label: 'Github Student 5$' },
   { id: 'github_nonprofits', emoji: '🎓', label: 'Github nonprofits 15$' },
   { id: '⚡Gemini_PRO_Veo3_Google_One2TB_Account_1Months⚡',       emoji: '🎨', label: '⚡Gemini PRO Veo 3 Google One 2TB Account 1Months⚡' },
+  { id: 'adobe',       emoji: '🔴', label: 'Adobe' },
+  { id: 'helium10',    emoji: '🚀', label: 'Helium 10' },
 ] as const;
 
 function availableStock(p: DigitalProduct): DigitalItem[] {
