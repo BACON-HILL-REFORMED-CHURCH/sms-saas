@@ -344,7 +344,7 @@ const DIGITAL_CATEGORIES = [
   { id: 'higgsfield',  emoji: '🎞️', label: 'Higgsfield' },
   { id: 'adobe',       emoji: '🔴', label: 'Adobe' },
   { id: 'supergrok',   emoji: '⚡', label: 'Super Grok' },
-  { id: 'capcut',      emoji: '✂️', label: 'CapCut Pro  1$' },
+  { id: 'capcut',      emoji: '✂️', label: 'CapCut Pro 1$' },
   { id: 'elevenlabs',  emoji: '🔊', label: 'ElevenLabs' },
   { id: 'googleads',   emoji: '🔍', label: 'Google Ads verfied 25$' },
   { id: 'facebookads', emoji: '📘', label: 'Facebook Ads' },
@@ -355,15 +355,13 @@ const DIGITAL_CATEGORIES = [
   { id: 'helium10',    emoji: '🚀', label: 'Helium 10' },
   { id: 'envato',      emoji: '🎭', label: 'Envato Elements' },
   { id: 'seranking',   emoji: '📊', label: 'SE Ranking' },
-  { id: 'claudemax',   emoji: '🤖', label: 'Claude AI MAX 20X' 60$ },
+  { id: 'claudemax',   emoji: '🤖', label: 'Claude AI MAX 20X 60$' },
   { id: 'proxyfree',   emoji: '🌐', label: 'Proxy Free' },
   { id: 'gwsnonprofit', emoji: '🏢', label: 'Google Workspace Nonprofit 300 User 130$' },
   { id: 'gemini_family_2m', emoji: '✨', label: 'Google Gemini Pro - 2 Months (Family) 2$' },
   { id: 'github_student', emoji: '🎓', label: 'Github Student 5$' },
   { id: 'github_nonprofits', emoji: '🎓', label: 'Github nonprofits 15$' },
-  { id: '⚡Gemini_PRO_Veo3_Google_One2TB_Account_1Months⚡',       emoji: '🎨', label: '⚡Gemini PRO Veo 3 Google One 2TB Account 1Months⚡' },
-  { id: 'adobe',       emoji: '🔴', label: 'Adobe' },
-  { id: 'helium10',    emoji: '🚀', label: 'Helium 10' },
+  { id: 'gemini_veo3_gw2tb', emoji: '⚡', label: '⚡Gemini PRO Veo 3 Google One 2TB Account 1Months⚡' },
 ] as const;
 
 function availableStock(p: DigitalProduct): DigitalItem[] {
