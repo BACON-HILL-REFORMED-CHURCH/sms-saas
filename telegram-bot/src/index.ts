@@ -2335,20 +2335,18 @@ bot.action(/^dcat_(.+)$/, async (ctx) => {
   const cat      = DIGITAL_CATEGORIES.find(c => c.id === catId);
   const products = [...digitalProducts.values()].filter(p => p.category === catId);
 
- if (!products.length) {
-  await ctx.reply(
-    '⚠️ This product is not available right now.*\n\nWant us to notify you?',
-    {
-     parse_mode: 'Markdown',
-      ...Markup.inlineKeyboard([
-        [Markup.button.callback('🔔 Request this product', `demand_${catId}`)]
-      ])
-    }
-  );
-  
-}
-}
-
+  if (!products.length) {
+    await ctx.reply(
+      '⚠️ This product is not available right now.*\n\nWant us to notify you?',
+      {
+        parse_mode: 'Markdown',
+        ...Markup.inlineKeyboard([
+          [Markup.button.callback('🔔 Request this product', `demand_${catId}`)]
+        ])
+      }
+    );
+    return;
+  }
 
   const buttons = products.map(p => {
     const qty  = availableStock(p).length;
@@ -2356,6 +2354,13 @@ bot.action(/^dcat_(.+)$/, async (ctx) => {
     const catEmoji = DIGITAL_CATEGORIES.find(c => c.id === p.category)?.emoji ?? '📦';
     return [Markup.button.callback(`${catEmoji} $${priceUsd} | ${p.name} (${qty})`, `dprod_${p.id}`)];
   });
+
+  await ctx.reply(
+    `${cat?.emoji} *${cat?.label}*\n\n${t(lang, 'digital_select_prod')}`,
+    { parse_mode: 'Markdown', ...Markup.inlineKeyboard(buttons) },
+  );
+});
+
 bot.action(/^demand_(.+)$/, async (ctx) => {
   const catId = ctx.match[1];
   const chatId = ctx.chat!.id;
@@ -2375,11 +2380,6 @@ bot.action(/^demand_(.+)$/, async (ctx) => {
   await ctx.reply(
     `✅ *Request sent!*\n\nWe will contact you within 12 hours 👉 @toopsellerr`,
     { parse_mode: 'Markdown' }
-  );
-});
-  await ctx.reply(
-    `${cat?.emoji} *${cat?.label}*\n\n${t(lang, 'digital_select_prod')}`,
-    { parse_mode: 'Markdown', ...Markup.inlineKeyboard(buttons) },
   );
 });
 
