@@ -333,6 +333,7 @@ function startPaymentPolling(uuid: string) {
 // ── Digital Store categories ──────────────────────────────────
 const DIGITAL_CATEGORIES = [
   { id: 'emailold',       emoji: '📩', label: 'Gmail OLD 0.6$' },
+  { id: 'gaming',       emoji: '🎮', label: 'Gaming', price: '$5.00',  stock: 0,  logoUrl: 'https://cdn.jsdelivr.net/gh/simple-icons/simple-icons/icons/steam.svg' },
   { id: 'emailpro',       emoji: '📩', label: 'Gmail pro 0.3$' },
   { id: 'CapCutProPrivate',   emoji: '🍿', label: 'CapCut Pro Private' },
   { id: 'gaming',      emoji: '🎮', label: 'Gaming' },
