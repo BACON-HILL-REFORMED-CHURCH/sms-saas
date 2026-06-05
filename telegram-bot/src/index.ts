@@ -2291,27 +2291,18 @@ async function showSupport(ctx: any) {
 }
 
 async function showDigitalStore(ctx: any) {
-  const chatId = ctx.chat?.id;
-  const lang = getLang(chatId);
+  const chatId    = ctx.chat?.id;
+  const lang      = getLang(chatId);
   const activeFlash = flashSale && new Date(flashSale.endsAt) > new Date() ? flashSale : null;
 
-  const allProducts = [...digitalProducts.values()];
-  
-  const buttons = allProducts.map(p => {
-    const qty = availableStock(p).length;
-    const priceUsd = (p.price / 100).toFixed(2);
-    const cat = DIGITAL_CATEGORIES.find(c => c.id === p.category);
-    const label = `$${priceUsd} ${p.name} (${qty})`;
-    return [Markup.button.callback(label, `dprod_${p.id}`)];
-  });
-
-  buttons.push([Markup.button.callback('🔍 Search Products', 'dstore_search')]);
-
-  await ctx.reply(
-    activeFlash ? `⚡ *FLASH SALE — ${activeFlash.percent}% OFF!*\n\n` : `🛒 *Digital Store*`,
-    { parse_mode: 'Markdown', ...Markup.inlineKeyboard(buttons) }
-  );
-}
+  let header = t(lang, 'digital_store_title');
+  if (activeFlash) {
+    const msLeft    = new Date(activeFlash.endsAt).getTime() - Date.now();
+    const hLeft     = Math.floor(msLeft / 3_600_000);
+    const mLeft     = Math.floor((msLeft % 3_600_000) / 60_000);
+    const timeLeft  = hLeft > 0 ? ${hLeft}h ${mLeft}m : ${mLeft}m;
+    header = ⚡️ *FLASH SALE — ${activeFlash.percent}% OFF!*\n⏳ Ends in: *${timeLeft}*\n🔥 All digital products discounted!\n\n + header;
+  }
   await ctx.reply(
     header,
     {
