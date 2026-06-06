@@ -2301,7 +2301,7 @@ async function showDigitalStore(ctx: any) {
     const hLeft     = Math.floor(msLeft / 3_600_000);
     const mLeft     = Math.floor((msLeft % 3_600_000) / 60_000);
     const timeLeft  = hLeft > 0 ? ${hLeft}h ${mLeft}m : ${mLeft}m;
-    header = ⚡️ *FLASH SALE — ${activeFlash.percent}% OFF!*\n⏳ Ends in: *${timeLeft}*\n🔥 All digital products discounted!\n\n + header;
+    header = `*FLASH SALE - ${activeFlash.percent}% OFF!*\nEnds in: *${timeLeft}*\nAll digital products discounted!\n\n` + header;
   }
   await ctx.reply(
     header,
@@ -2310,7 +2310,7 @@ async function showDigitalStore(ctx: any) {
       ...Markup.inlineKeyboard([
         ...DIGITAL_CATEGORIES.map(cat => [
           Markup.button.callback(
-            activeFlash ? `${cat.emoji} ${cat.label} ⚡-${activeFlash.percent}%` : `${cat.emoji} ${cat.label}`,
+            activeFlash ? `${cat.emoji} ${cat.label} -${activeFlash.percent}%` : `${cat.emoji} ${cat.label}`,
             `dcat_${cat.id}`,
           ),
         ]),
