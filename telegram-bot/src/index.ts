@@ -2291,33 +2291,34 @@ async function showSupport(ctx: any) {
 }
 
 async function showDigitalStore(ctx: any) {
-  const chatId    = ctx.chat?.id;
-  const lang      = getLang(chatId);
+  const chatId = ctx.chat?.id;
+  const lang = getLang(chatId);
   const activeFlash = flashSale && new Date(flashSale.endsAt) > new Date() ? flashSale : null;
 
-  let header = t(lang, 'digital_store_title');
-  if (activeFlash) {
-    const msLeft    = new Date(activeFlash.endsAt).getTime() - Date.now();
-    const hLeft     = Math.floor(msLeft / 3_600_000);
-    const mLeft     = Math.floor((msLeft % 3_600_000) / 60_000);
-    const timeLeft  = hLeft > 0 ? ${hLeft}h ${mLeft}m : ${mLeft}m;
-    header = ⚡️ *FLASH SALE — ${activeFlash.percent}% OFF!*\n⏳ Ends in: *${timeLeft}*\n🔥 All digital products discounted!\n\n + header;
+  const allProducts = [...digitalProducts.values()];
+
+  if (!allProducts.length) {
+    await ctx.reply('🛒 *Digital Store*\n\n_No products available yet._', { parse_mode: 'Markdown' });
+    return;
   }
-  await ctx.reply(
-    header,
-    {
-      parse_mode: 'Markdown',
-      ...Markup.inlineKeyboard([
-        ...DIGITAL_CATEGORIES.map(cat => [
-          Markup.button.callback(
-            activeFlash ? `${cat.emoji} ${cat.label} ⚡-${activeFlash.percent}%` : `${cat.emoji} ${cat.label}`,
-            `dcat_${cat.id}`,
-          ),
-        ]),
-        [Markup.button.callback('🔍 Search Products', 'dstore_search')],
-      ]),
-    },
-  );
+
+  const buttons = allProducts.map(p => {
+    const qty = availableStock(p).length;
+    const priceUsd = (p.price / 100).toFixed(2);
+    const label = `$${priceUsd} ${p.name} (${qty})`;
+    return [Markup.button.callback(label, `dprod_${p.id}`)];
+  });
+
+  buttons.push([Markup.button.callback('🔍 Search Products', 'dstore_search')]);
+
+  const header = activeFlash
+    ? `⚡ *FLASH SALE — ${activeFlash.percent}% OFF!*\n\n🛒 *Digital Store*`
+    : `🛒 *Digital Store*`;
+
+  await ctx.reply(header, {
+    parse_mode: 'Markdown',
+    ...Markup.inlineKeyboard(buttons),
+  });
 }
 
 bot.action('dstore_search', async (ctx) => {
