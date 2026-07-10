@@ -2293,8 +2293,8 @@ async function showDigitalStore(ctx: any) {
     const msLeft    = new Date(activeFlash.endsAt).getTime() - Date.now();
     const hLeft     = Math.floor(msLeft / 3_600_000);
     const mLeft     = Math.floor((msLeft % 3_600_000) / 60_000);
-    const timeLeft  = hLeft > 0 ? ${hLeft}h ${mLeft}m : ${mLeft}m;
-    header = `*FLASH SALE - ${activeFlash.percent}% OFF!*\nEnds in: *${timeLeft}*\nAll digital products discounted!\n\n` + header;
+   const timeLeft = hLeft > 0 ? (hLeft + 'h ' + mLeft + 'm') : (mLeft + 'm');
+      header = '*FLASH SALE - ' + activeFlash.percent + '% OFF!*\nEnds in: *' + timeLeft + '*\nAll digital products discounted!\n\n' + header;
   }
   await ctx.reply(
     header,
