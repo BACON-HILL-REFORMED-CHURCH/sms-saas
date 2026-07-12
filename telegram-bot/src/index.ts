@@ -346,7 +346,7 @@ const DIGITAL_CATEGORIES = [
   { id: 'LOVABLEPROAI ',   emoji: '⚡', label: 'LOVABLE PRO AI |3.50$|' },
   { id: 'facebookads', emoji: '⚡', label: 'Facebook Ads' },
   { id: 'ChatGPTPluss', emoji: '⚡', label: 'ChatGPT Plusss|7$|' },
-  { id: 'semrush',     emoji: '⚡', label: 'Semrush' },
+  { id: 'semrush',     emoji: '⚡', label: 'SEMRUSH PREMIUM |3$|' },
   { id: 'ahrefs',      emoji: '⚡', label: 'Ahrefs' },
   { id: 'Canvaedu',       emoji: '⚡', label: 'Canva edu |0.9$|' },
   { id: '𝗔𝗪𝗦𝟱𝘃𝗖𝗣𝗨',   emoji: '⚡', label: '𝗔𝗪𝗦 𝟱 𝘃𝗖𝗣𝗨 𝐔𝐊 | 6.5$ |' },
@@ -355,9 +355,7 @@ const DIGITAL_CATEGORIES = [
   { id: 'APICODEX10MTOKEN1D',   emoji: '⚡', label: 'API CODEX 10M TOKEN |1.70$|' },
   { id: 'proxyfree',   emoji: '⚡', label: 'Proxy Free|0$ |' },
   { id: 'gwsnonprofit', emoji: '⚡', label: 'Google Workspace Nonprofit 300 User |130$|' },
-  { id: 'gemini_family_2m', emoji: '⚡', label: 'Google Gemini Pro - 2 Months (Family) |2$|' },
   { id: 'github_student', emoji: '⚡', label: 'Github Student |5$|' },
-  { id: 'gemini_veo3_gw2tb', emoji: '⚡', label: 'Gemini PRO Veo 3 Google One 2TB Account 1Months' },
 ] as const;
 
 function availableStock(p: DigitalProduct): DigitalItem[] {
