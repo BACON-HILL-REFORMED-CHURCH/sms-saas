@@ -340,6 +340,7 @@ const DIGITAL_CATEGORIES = [
   { id: 'adobe',       emoji: '⚡', label: 'ADOBE FULL APP |2.2$|' },
   { id: 'supergrok',   emoji: '⚡', label: 'Super Grok |1$|' },
   { id: 'capcut',      emoji: '⚡', label: 'CapCut Pro |0.8$|' },
+  { id: 'NetflixPremium4k',      emoji: '⚡', label: 'Netflix Premium 4k' },
   { id: 'BUSNIESSMANGERVERIFIED',      emoji: '⚡', label: 'BUSNIESS MANGER VERIFIED|10$|' },
   { id: 'DESCORDNITRO',      emoji: '⚡', label: 'DESCORD NITRO |3$|' },
   { id: 'elevenlabs',  emoji: '⚡', label: 'ElevenLabs' },
