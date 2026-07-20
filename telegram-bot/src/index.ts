@@ -997,9 +997,9 @@ bot.action(/^cbuy_(\d+)_(\d+)_(\d+)$/, async (ctx) => {
     console.log('[cbuy] SMSPool response:', JSON.stringify(purchase));
 
     if (!purchase || purchase.success === 0 || purchase.success === '0') {
-        const reason = 'No numbers available. Please try again or contact support https://wa.me/212619701834';
+        const reason = 'No numbers available. Please try again or contact support @toopsellerr';
       console.error(`[cbuy] Purchase failed for country=${countryId} service=${serviceId}:`, reason);
-      await ctx.reply(`❌ No numbers available right now. Please try again later or contact support 👉 https://wa.me/212619701834`);
+      await ctx.reply(`❌ No numbers available right now. Please try again later or contact support 👉 @toopsellerr`);
       notifyAdminError('SMSPool purchase failed', new Error(reason));
       return;
     }
