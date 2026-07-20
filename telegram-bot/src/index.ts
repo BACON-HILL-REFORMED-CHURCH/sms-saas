@@ -2401,7 +2401,7 @@ bot.action(/^demand_(.+)$/, async (ctx) => {
     );
   }
   await ctx.reply(
-    `✅ *Request sent!*\n\nWe will contact you within 12 hours 👉 https://wa.me/212619701834`,
+    `✅ *Request sent!*\n\nWe will contact you within  👉 https://wa.me/212619701834`,
     { parse_mode: 'Markdown' }
   );
 });
