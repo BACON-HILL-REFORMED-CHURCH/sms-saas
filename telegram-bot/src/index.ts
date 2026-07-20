@@ -997,9 +997,9 @@ bot.action(/^cbuy_(\d+)_(\d+)_(\d+)$/, async (ctx) => {
     console.log('[cbuy] SMSPool response:', JSON.stringify(purchase));
 
     if (!purchase || purchase.success === 0 || purchase.success === '0') {
-        const reason = 'No numbers available. Please try again or contact support @toopsellerr';
+        const reason = 'No numbers available. Please try again or contact support https://wa.me/212619701834';
       console.error(`[cbuy] Purchase failed for country=${countryId} service=${serviceId}:`, reason);
-      await ctx.reply(`❌ No numbers available right now. Please try again later or contact support 👉 @toopsellerr`);
+      await ctx.reply(`❌ No numbers available right now. Please try again later or contact support 👉 https://wa.me/212619701834`);
       notifyAdminError('SMSPool purchase failed', new Error(reason));
       return;
     }
@@ -2401,7 +2401,7 @@ bot.action(/^demand_(.+)$/, async (ctx) => {
     );
   }
   await ctx.reply(
-    `✅ *Request sent!*\n\nWe will contact you within 12 hours 👉 @toopsellerr`,
+    `✅ *Request sent!*\n\nWe will contact you within 12 hours 👉 https://wa.me/212619701834`,
     { parse_mode: 'Markdown' }
   );
 });
